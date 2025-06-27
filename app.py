@@ -143,8 +143,8 @@ def upload_file():
             match = re.search(r's3\.(.+?)\.backblazeb2\.com', B2_ENDPOINT)
             if match:
                 region = match.group(1)
-                # Convert us-east-005 to f005
-                file_num = 'f' + region.split('-')[-1].lstrip('0')
+                # Convert us-east-005 to f005 (keep the leading zeros!)
+                file_num = 'f' + region.split('-')[-1]
                 url = f"https://{file_num}.backblazeb2.com/file/{B2_BUCKET}/{s3_key}"
             else:
                 # Fallback to constructed URL
