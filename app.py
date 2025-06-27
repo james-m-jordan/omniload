@@ -131,26 +131,26 @@ def upload_file():
         s3.upload_fileobj(
             Fileobj=BytesIO(file_data),
             Bucket=B2_BUCKET,
-            Key=s3_key,
-            ExtraArgs={'ACL': 'public-read'}  # Make file publicly accessible
+            Key=s3_key
+            # Note: Removed ACL since bucket is private
         )
         
         # Construct public URL - using the correct B2 format
         # For B2, the public URL format is: https://fNNN.backblazeb2.com/file/BUCKET_NAME/KEY
-        # Extract the file number from endpoint (e.g., f004 from s3.us-west-004.backblazeb2.com)
+        # Extract the file number from endpoint (e.g., f005 from s3.us-east-005.backblazeb2.com)
         import re
         if B2_ENDPOINT:
             match = re.search(r's3\.(.+?)\.backblazeb2\.com', B2_ENDPOINT)
             if match:
                 region = match.group(1)
-                # Convert us-west-004 to f004
+                # Convert us-east-005 to f005
                 file_num = 'f' + region.split('-')[-1].lstrip('0')
                 url = f"https://{file_num}.backblazeb2.com/file/{B2_BUCKET}/{s3_key}"
             else:
                 # Fallback to constructed URL
                 url = f"{B2_ENDPOINT}/{B2_BUCKET}/{s3_key}"
         else:
-            url = f"https://f004.backblazeb2.com/file/{B2_BUCKET}/{s3_key}"
+            url = f"https://f005.backblazeb2.com/file/{B2_BUCKET}/{s3_key}"
         
         # Store metadata
         conn = sqlite3.connect(DB_PATH)

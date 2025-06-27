@@ -10,6 +10,16 @@ A simple file uploader that stores files in Backblaze B2 with hash-based naming 
 - Simple web UI for uploads
 - Public file access URLs
 
+## Important: Bucket Configuration
+
+**Your Backblaze B2 bucket must be set to "Public" for file URLs to work!**
+
+Currently, your bucket shows as "Private". To fix this:
+1. Go to your Backblaze B2 console
+2. Click on "Bucket Settings" for `freeload-uploads`
+3. Change "Files in Bucket are:" from "Private" to "Public"
+4. Save the changes
+
 ## Local Development
 
 1. Clone the repository
@@ -18,7 +28,7 @@ A simple file uploader that stores files in Backblaze B2 with hash-based naming 
    B2_KEY_ID=your_key_id
    B2_APPLICATION_KEY=your_application_key
    B2_BUCKET=freeload-uploads
-   B2_ENDPOINT=https://s3.us-west-004.backblazeb2.com
+   B2_ENDPOINT=https://s3.us-east-005.backblazeb2.com
    ```
 3. Install dependencies:
    ```bash
@@ -35,7 +45,7 @@ A simple file uploader that stores files in Backblaze B2 with hash-based naming 
 ### Prerequisites
 - A [Railway](https://railway.app) account
 - A GitHub account
-- Backblaze B2 bucket with appropriate CORS settings
+- Backblaze B2 bucket with appropriate CORS settings and **public visibility**
 
 ### Steps
 
@@ -59,8 +69,8 @@ A simple file uploader that stores files in Backblaze B2 with hash-based naming 
    In Railway dashboard, go to Variables and add:
    - `B2_KEY_ID` - Your Backblaze Key ID
    - `B2_APPLICATION_KEY` - Your Backblaze Application Key
-   - `B2_BUCKET` - Your bucket name (e.g., freeload-uploads)
-   - `B2_ENDPOINT` - Your B2 endpoint (e.g., https://s3.us-west-004.backblazeb2.com)
+   - `B2_BUCKET` - Your bucket name (freeload-uploads)
+   - `B2_ENDPOINT` - Your B2 endpoint (https://s3.us-east-005.backblazeb2.com)
 
 4. **Deploy**
    - Railway will automatically deploy your app
