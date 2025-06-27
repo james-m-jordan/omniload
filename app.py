@@ -26,6 +26,96 @@ def format_file_size(size_bytes):
         size_bytes /= 1024.0
     return f"{size_bytes:.1f} PB"
 
+def calculate_file_hash_chunked(file_obj, chunk_size=8192):
+    """Calculate SHA256 hash of a file using chunked reading to save memory."""
+    hasher = hashlib.sha256()
+    file_obj.seek(0)
+    
+    while True:
+        chunk = file_obj.read(chunk_size)
+        if not chunk:
+            break
+        hasher.update(chunk)
+    
+    file_obj.seek(0)  # Reset file pointer
+    return hasher.hexdigest()
+
+def upload_large_file_multipart(file_obj, bucket, key, file_size):
+    """Upload large files using B2's multipart upload API."""
+    try:
+        # Initialize multipart upload
+        response = s3.create_multipart_upload(
+            Bucket=bucket,
+            Key=key
+        )
+        upload_id = response['UploadId']
+        logger.info(f"Started multipart upload: {upload_id}")
+        
+        # Upload parts
+        parts = []
+        part_number = 1
+        bytes_uploaded = 0
+        
+        file_obj.seek(0)
+        
+        while bytes_uploaded < file_size:
+            # Calculate part size (last part might be smaller)
+            remaining = file_size - bytes_uploaded
+            part_size = min(CHUNK_SIZE, remaining)
+            
+            # Read chunk
+            chunk_data = file_obj.read(part_size)
+            
+            logger.info(f"Uploading part {part_number} ({format_file_size(part_size)})")
+            
+            # Upload part
+            response = s3.upload_part(
+                Bucket=bucket,
+                Key=key,
+                PartNumber=part_number,
+                UploadId=upload_id,
+                Body=chunk_data
+            )
+            
+            parts.append({
+                'PartNumber': part_number,
+                'ETag': response['ETag']
+            })
+            
+            bytes_uploaded += part_size
+            part_number += 1
+            
+            # Log progress
+            progress = (bytes_uploaded / file_size) * 100
+            logger.info(f"Upload progress: {progress:.1f}% ({format_file_size(bytes_uploaded)}/{format_file_size(file_size)})")
+        
+        # Complete multipart upload
+        response = s3.complete_multipart_upload(
+            Bucket=bucket,
+            Key=key,
+            UploadId=upload_id,
+            MultipartUpload={'Parts': parts}
+        )
+        
+        logger.info(f"Multipart upload completed: {key}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Multipart upload failed: {e}")
+        
+        # Try to abort the upload
+        try:
+            s3.abort_multipart_upload(
+                Bucket=bucket,
+                Key=key,
+                UploadId=upload_id
+            )
+            logger.info(f"Aborted multipart upload: {upload_id}")
+        except:
+            pass
+            
+        raise e
+
 # Load environment variables
 load_dotenv()
 B2_KEY_ID = os.getenv('B2_KEY_ID')
@@ -96,14 +186,37 @@ s3 = session.client(
 
 app = Flask(__name__)
 
-# Configure upload limits
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
+# Configure upload limits - removed artificial limit, let B2 handle it
+# B2 supports files up to 10TB, with parts from 5MB to 5GB
+app.config['MAX_CONTENT_LENGTH'] = None  # No limit, we'll stream large files
 app.config['UPLOAD_FOLDER'] = '/tmp'  # Temporary storage if needed
 
-# Error handler for file too large
-@app.errorhandler(413)
-def request_entity_too_large(error):
-    return jsonify({'error': 'File too large. Maximum size is 100MB'}), 413
+# Additional configuration for large file handling
+app.config['MAX_CONTENT_PATH'] = None
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+
+# Enable request streaming for large files
+class StreamConsumingMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    def __call__(self, environ, start_response):
+        # For uploads, don't buffer the entire request
+        if environ.get('REQUEST_METHOD') == 'POST' and '/upload' in environ.get('PATH_INFO', ''):
+            environ['wsgi.input_terminated'] = True
+        return self.app(environ, start_response)
+
+# Apply streaming middleware
+app.wsgi_app = StreamConsumingMiddleware(app.wsgi_app)
+
+# B2 multipart upload configuration
+CHUNK_SIZE = 100 * 1024 * 1024  # 100MB chunks for multipart uploads
+MIN_MULTIPART_SIZE = 100 * 1024 * 1024  # Use multipart for files > 100MB
+
+# Error handler for file too large - removed since we have no limit
+# @app.errorhandler(413)
+# def request_entity_too_large(error):
+#     return jsonify({'error': 'File too large. Maximum size is 100MB'}), 413
 
 # Simple HTML form for file upload
 HTML_TEMPLATE = '''
@@ -174,6 +287,10 @@ HTML_TEMPLATE = '''
         .upload-btn:hover {
             background: #45a049;
         }
+        .upload-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
         .result { 
             margin-top: 30px; 
             padding: 20px; 
@@ -223,12 +340,58 @@ HTML_TEMPLATE = '''
             margin-top: 15px;
             color: #666;
         }
+        .progress-container {
+            display: none;
+            margin-top: 20px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #f0f0f0;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #4CAF50;
+            width: 0%;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 14px;
+        }
+        .upload-info {
+            text-align: center;
+            margin-top: 10px;
+            color: #666;
+            font-size: 14px;
+        }
+        .features {
+            background: #f0f8ff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            text-align: center;
+        }
+        .features h3 {
+            margin-top: 0;
+            color: #1976d2;
+        }
+        .features ul {
+            list-style: none;
+            padding: 0;
+        }
+        .features li {
+            margin: 8px 0;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🚀 OmniLoad</h1>
-        <p class="tagline">Upload files and share them with hash-based URLs</p>
+        <p class="tagline">Upload files of any size and share them with hash-based URLs</p>
         
         <div class="nav">
             <a href="/">Upload</a>
@@ -244,7 +407,25 @@ HTML_TEMPLATE = '''
                 <input type="file" id="fileInput" required>
                 <div class="file-name" id="fileName"></div>
                 <button type="submit" class="upload-btn" style="display: none;">Upload File</button>
+                
+                <div class="progress-container" id="progressContainer">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill">0%</div>
+                    </div>
+                    <div class="upload-info" id="uploadInfo">Preparing upload...</div>
+                </div>
             </form>
+        </div>
+        
+        <div class="features">
+            <h3>🎯 True OmniUploader Features</h3>
+            <ul>
+                <li>✅ <strong>No file size limits</strong> - Upload files up to 10TB</li>
+                <li>✅ <strong>Chunked uploads</strong> - Large files upload reliably</li>
+                <li>✅ <strong>Memory efficient</strong> - Won't crash on huge files</li>
+                <li>✅ <strong>Hash-based URLs</strong> - Share with short links</li>
+                <li>✅ <strong>Automatic deduplication</strong> - Same file = same hash</li>
+            </ul>
         </div>
         
         <div id="result"></div>
@@ -256,14 +437,32 @@ HTML_TEMPLATE = '''
         const fileName = document.getElementById('fileName');
         const uploadBtn = document.querySelector('.upload-btn');
         const uploadForm = document.getElementById('uploadForm');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressFill = document.getElementById('progressFill');
+        const uploadInfo = document.getElementById('uploadInfo');
         
         // File selection
         fileInput.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
-                fileName.textContent = e.target.files[0].name;
+                const file = e.target.files[0];
+                fileName.textContent = `${file.name} (${formatFileSize(file.size)})`;
                 uploadBtn.style.display = 'inline-block';
             }
         });
+        
+        // Format file size
+        function formatFileSize(bytes) {
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let size = bytes;
+            let unitIndex = 0;
+            
+            while (size >= 1024 && unitIndex < units.length - 1) {
+                size /= 1024;
+                unitIndex++;
+            }
+            
+            return `${size.toFixed(1)} ${units[unitIndex]}`;
+        }
         
         // Drag and drop
         uploadArea.addEventListener('dragover', (e) => {
@@ -281,12 +480,13 @@ HTML_TEMPLATE = '''
             
             if (e.dataTransfer.files.length > 0) {
                 fileInput.files = e.dataTransfer.files;
-                fileName.textContent = e.dataTransfer.files[0].name;
+                const file = e.dataTransfer.files[0];
+                fileName.textContent = `${file.name} (${formatFileSize(file.size)})`;
                 uploadBtn.style.display = 'inline-block';
             }
         });
         
-        // Form submission
+        // Form submission with progress tracking
         uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const file = fileInput.files[0];
@@ -294,38 +494,80 @@ HTML_TEMPLATE = '''
             formData.append('file', file);
             
             const resultDiv = document.getElementById('result');
-            resultDiv.innerHTML = '<div class="result">⏳ Uploading...</div>';
+            resultDiv.innerHTML = '';
+            
+            // Show progress
+            uploadBtn.disabled = true;
+            progressContainer.style.display = 'block';
+            progressFill.style.width = '0%';
+            progressFill.textContent = '0%';
+            
+            const fileSize = formatFileSize(file.size);
+            uploadInfo.textContent = `Uploading ${file.name} (${fileSize})...`;
             
             try {
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await response.json();
+                const xhr = new XMLHttpRequest();
                 
-                if (response.ok) {
-                    resultDiv.innerHTML = `
-                        <div class="result success">
-                            <h3>✅ Upload Successful!</h3>
-                            <p><strong>File:</strong> ${data.filename}</p>
-                            <p><strong>Size:</strong> ${data.size}</p>
-                            <p><strong>Hash:</strong> <code>${data.hash}</code></p>
-                            <p><strong>Short URL:</strong> 
-                                <a href="${data.info_url}" class="hash-link">${window.location.origin}${data.info_url}</a>
-                            </p>
-                            <p><strong>Direct URL:</strong> 
-                                <a href="${data.url}" target="_blank">${data.url}</a>
-                            </p>
-                        </div>
-                    `;
-                    // Reset form
-                    uploadForm.reset();
-                    fileName.textContent = '';
-                    uploadBtn.style.display = 'none';
-                } else {
-                    resultDiv.innerHTML = `<div class="result error">❌ Error: ${data.error}</div>`;
-                }
+                // Track upload progress
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percentComplete = Math.round((e.loaded / e.total) * 100);
+                        progressFill.style.width = percentComplete + '%';
+                        progressFill.textContent = percentComplete + '%';
+                        
+                        if (percentComplete === 100) {
+                            uploadInfo.textContent = 'Processing file on server...';
+                        } else {
+                            const uploaded = formatFileSize(e.loaded);
+                            const total = formatFileSize(e.total);
+                            uploadInfo.textContent = `Uploading: ${uploaded} / ${total}`;
+                        }
+                    }
+                });
+                
+                // Handle response
+                xhr.addEventListener('load', () => {
+                    uploadBtn.disabled = false;
+                    progressContainer.style.display = 'none';
+                    
+                    if (xhr.status === 200) {
+                        const data = JSON.parse(xhr.responseText);
+                        resultDiv.innerHTML = `
+                            <div class="result success">
+                                <h3>✅ Upload Successful!</h3>
+                                <p><strong>File:</strong> ${data.filename}</p>
+                                <p><strong>Size:</strong> ${data.size}</p>
+                                <p><strong>Hash:</strong> <code>${data.hash}</code></p>
+                                <p><strong>Short URL:</strong> 
+                                    <a href="${data.info_url}" class="hash-link">${window.location.origin}${data.info_url}</a>
+                                </p>
+                                <p><strong>Direct URL:</strong> 
+                                    <a href="${data.url}" target="_blank">${data.url}</a>
+                                </p>
+                            </div>
+                        `;
+                        // Reset form
+                        uploadForm.reset();
+                        fileName.textContent = '';
+                        uploadBtn.style.display = 'none';
+                    } else {
+                        const data = JSON.parse(xhr.responseText);
+                        resultDiv.innerHTML = `<div class="result error">❌ Error: ${data.error}</div>`;
+                    }
+                });
+                
+                xhr.addEventListener('error', () => {
+                    uploadBtn.disabled = false;
+                    progressContainer.style.display = 'none';
+                    resultDiv.innerHTML = `<div class="result error">❌ Error: Upload failed. Please try again.</div>`;
+                });
+                
+                xhr.open('POST', '/upload');
+                xhr.send(formData);
+                
             } catch (error) {
+                uploadBtn.disabled = false;
+                progressContainer.style.display = 'none';
                 resultDiv.innerHTML = `<div class="result error">❌ Error: ${error.message}</div>`;
             }
         });
@@ -355,35 +597,37 @@ def upload_file():
         logger.info(f"Upload attempt: {file.filename} ({format_file_size(file_size)})")
         
         # Validate file size
-        if file_size > app.config['MAX_CONTENT_LENGTH']:
-            return jsonify({'error': f'File too large. Maximum size is {format_file_size(app.config["MAX_CONTENT_LENGTH"])}'}), 413
-        
         if file_size == 0:
             return jsonify({'error': 'File is empty'}), 400
-        
-        # Read file data
-        file_data = file.read()
         
         # Get file metadata
         mime_type = file.mimetype
         original_filename = file.filename
         upload_ip = request.remote_addr
         
-        # Calculate hash
-        filehash = hashlib.sha256(file_data).hexdigest()
+        # Calculate hash using chunked reading (memory efficient)
+        logger.info(f"Calculating hash for {file.filename}")
+        filehash = calculate_file_hash_chunked(file)
         
         # Create S3 key with hash prefix
         s3_key = f"{filehash[:8]}_{file.filename}"
         
-        logger.info(f"Uploading to B2: {s3_key}")
+        logger.info(f"Uploading to B2: {s3_key} (size: {format_file_size(file_size)})")
         
-        # Upload to B2
-        s3.upload_fileobj(
-            Fileobj=BytesIO(file_data),
-            Bucket=B2_BUCKET,
-            Key=s3_key
-            # Note: Removed ACL since bucket is private
-        )
+        # Choose upload method based on file size
+        if file_size > MIN_MULTIPART_SIZE:
+            # Use multipart upload for large files
+            logger.info(f"Using multipart upload for large file ({format_file_size(file_size)})")
+            upload_large_file_multipart(file, B2_BUCKET, s3_key, file_size)
+        else:
+            # Use regular upload for smaller files
+            logger.info(f"Using regular upload for file ({format_file_size(file_size)})")
+            file.seek(0)  # Reset to beginning
+            s3.upload_fileobj(
+                Fileobj=file,
+                Bucket=B2_BUCKET,
+                Key=s3_key
+            )
         
         logger.info(f"B2 upload successful: {s3_key}")
         

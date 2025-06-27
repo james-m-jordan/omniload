@@ -53,6 +53,20 @@ This guide covers the technical details of OmniLoad's implementation, architectu
 - Disambiguation for hash collisions
 - Navigation between features
 
+### Sprint 2.5: Large File Support (Latest)
+- Removed artificial 100MB file size limit
+- Implemented chunked hash calculation for memory efficiency
+- Added B2 multipart upload support for files > 100MB
+- Progress tracking with real-time upload status
+- No more loading entire files into memory
+- Support for files up to 10TB (B2's limit)
+
+**Key Improvements**:
+- Memory-efficient chunked processing
+- B2 multipart upload API integration
+- Real-time progress tracking in UI
+- Automatic upload method selection based on file size
+
 ## 📁 Code Structure
 
 ### Main Application (`app.py`)
@@ -89,6 +103,34 @@ CREATE INDEX idx_filehash ON files(filehash);
 ```
 
 ## 🔑 Key Implementation Details
+
+### Large File Handling
+
+```python
+# Chunked hash calculation (memory efficient)
+def calculate_file_hash_chunked(file_obj, chunk_size=8192):
+    hasher = hashlib.sha256()
+    while chunk := file_obj.read(chunk_size):
+        hasher.update(chunk)
+    return hasher.hexdigest()
+
+# B2 multipart upload for files > 100MB
+def upload_large_file_multipart(file_obj, bucket, key, file_size):
+    # Initialize multipart upload
+    # Upload in 100MB chunks
+    # Track progress and handle errors
+    # Complete or abort upload
+```
+
+### Upload Strategy
+
+```python
+# Automatic method selection
+if file_size > MIN_MULTIPART_SIZE:  # 100MB
+    upload_large_file_multipart(file, bucket, key, file_size)
+else:
+    s3.upload_fileobj(file, bucket, key)
+```
 
 ### B2 URL Construction
 

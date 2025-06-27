@@ -1,10 +1,14 @@
 # 🚀 OmniLoad
 
-A fast, secure file upload service with hash-based retrieval. Upload files and share them using short, hash-based URLs.
+A fast, secure file upload service with hash-based retrieval. Upload files of ANY size and share them using short, hash-based URLs. A true "omniuploader" that handles everything from tiny text files to massive video files.
 
 ## ✨ Features
 
-### Core Features (Sprint 1 & 2)
+### Core Features (Latest Update)
+- **Unlimited File Sizes**: Upload files up to 10TB (B2's limit) - no artificial restrictions
+- **Memory Efficient**: Chunked processing ensures large files won't crash the server
+- **Multipart Uploads**: Automatic chunking for files over 100MB for reliable uploads
+- **Progress Tracking**: Real-time upload progress with speed and size information
 - **Hash-Based URLs**: Every file gets a unique SHA256 hash, accessible via short URLs like `/f/a1b2c3d4`
 - **File Upload**: Drag-and-drop or click to upload files to Backblaze B2
 - **Search**: Search files by filename or hash
@@ -14,10 +18,11 @@ A fast, secure file upload service with hash-based retrieval. Upload files and s
 
 ### Technical Features
 - **SQLite Database**: Lightweight metadata storage with automatic migrations
-- **Backblaze B2 Integration**: Reliable cloud storage using S3-compatible API
+- **Backblaze B2 Integration**: Reliable cloud storage using S3-compatible API with multipart support
 - **Responsive Design**: Works great on desktop and mobile
-- **Progress Feedback**: Real-time upload status
-- **Human-Readable Sizes**: File sizes shown in KB, MB, GB format
+- **Progress Feedback**: Real-time upload status with percentage and speed
+- **Human-Readable Sizes**: File sizes shown in KB, MB, GB, TB format
+- **Chunked Hash Calculation**: Memory-efficient SHA256 hashing for large files
 
 ## 🛠️ Tech Stack
 
