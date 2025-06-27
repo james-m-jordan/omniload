@@ -1,14 +1,33 @@
 # OmniLoad - Cloud File Uploader with Hash-Based Access
 
-A simple file uploader that stores files in Backblaze B2 with hash-based naming for deduplication.
+A secure, production-ready file uploader that stores files in Backblaze B2 with hash-based naming for deduplication.
 
 ## Features
 
-- Upload files to Backblaze B2
-- SHA256 hash-based file naming
-- SQLite metadata storage
-- Simple web UI for uploads
+### Core Functionality
+- Upload files to Backblaze B2 cloud storage
+- SHA256 hash-based file naming (deduplication)
+- SQLite metadata storage with indexing
+- Beautiful, responsive web UI with drag-and-drop
+- Real-time upload progress tracking
 - Public file access URLs
+
+### Security & Reliability
+- File type validation (blocks dangerous extensions)
+- File size limits (configurable, default 50MB)
+- Filename sanitization to prevent attacks
+- Rate limiting (10 uploads/minute, 50/hour)
+- Comprehensive error handling and logging
+- Health check endpoint for monitoring
+- Duplicate file detection
+
+### User Experience
+- Drag-and-drop file upload
+- Progress bar with percentage
+- Mobile-responsive design
+- Clear error messages
+- File size formatting
+- Instant feedback
 
 ## Important: Bucket Configuration
 
@@ -29,6 +48,8 @@ Currently, your bucket shows as "Private". To fix this:
    B2_APPLICATION_KEY=your_application_key
    B2_BUCKET=freeload-uploads
    B2_ENDPOINT=https://s3.us-east-005.backblazeb2.com
+   FLASK_SECRET_KEY=your-secret-key-here
+   FLASK_ENV=development
    ```
 3. Install dependencies:
    ```bash
@@ -39,6 +60,35 @@ Currently, your bucket shows as "Private". To fix this:
    python app.py
    ```
 5. Open http://localhost:5000 in your browser
+
+## Testing
+
+Run the test suite:
+```bash
+pytest test_app.py
+```
+
+## API Endpoints
+
+- `GET /` - Web UI for file upload
+- `POST /upload` - Upload a file (multipart/form-data)
+  - Returns: `{filename, original_filename, hash, url, file_size, duplicate}`
+- `GET /files` - List recent uploads with pagination
+  - Query params: `page`, `per_page` (max 100)
+- `GET /health` - Health check for monitoring
+
+## Project Structure
+
+```
+omniload/
+├── app.py           # Main Flask application
+├── config.py        # Configuration and environment variables
+├── utils.py         # Utility functions (validation, sanitization)
+├── test_app.py      # Test suite
+├── requirements.txt # Python dependencies
+├── railway.json     # Railway deployment config
+└── README.md        # This file
+```
 
 ## Deployment on Railway
 
@@ -71,28 +121,63 @@ Currently, your bucket shows as "Private". To fix this:
    - `B2_APPLICATION_KEY` - Your Backblaze Application Key
    - `B2_BUCKET` - Your bucket name (freeload-uploads)
    - `B2_ENDPOINT` - Your B2 endpoint (https://s3.us-east-005.backblazeb2.com)
+   - `FLASK_SECRET_KEY` - A secure random string
+   - `FLASK_ENV` - Set to `production`
 
 4. **Deploy**
    - Railway will automatically deploy your app
    - You'll get a URL like `https://your-app.up.railway.app`
 
-## API Endpoints
+## Configuration
 
-- `GET /` - Web UI for file upload
-- `POST /upload` - Upload a file (multipart/form-data)
-- `GET /files` - List recent uploads (JSON)
+### Environment Variables
+- `B2_KEY_ID` - Backblaze B2 Key ID (required)
+- `B2_APPLICATION_KEY` - Backblaze B2 Application Key (required)
+- `B2_BUCKET` - B2 bucket name (required)
+- `B2_ENDPOINT` - B2 S3-compatible endpoint (required)
+- `FLASK_SECRET_KEY` - Flask secret key for sessions (required in production)
+- `FLASK_ENV` - Environment (development/production)
+- `DB_PATH` - SQLite database path (default: metadata.db)
 
-## Security Notes
+### File Upload Limits
+- Maximum file size: 50MB (configurable in `config.py`)
+- Allowed extensions: Common document, image, audio, video formats
+- Blocked extensions: Executables and potentially dangerous files
 
-- The current implementation makes all uploaded files publicly accessible
+## Security Considerations
+
+- All filenames are sanitized to prevent directory traversal attacks
+- File extensions are validated against allow/block lists
+- Rate limiting prevents abuse
+- Uploads are logged with IP addresses
 - Consider adding authentication for production use
-- Add file size limits and type validation
-- Use environment variables for all sensitive data
+- Use strong `FLASK_SECRET_KEY` in production
+- Enable HTTPS in production (Railway provides this)
 
 ## Sprint Progress
 
-- [x] Sprint 1: Basic file upload functionality
+- [x] Sprint 1: Basic file upload functionality + Production Polish
+  - [x] Core upload/download functionality
+  - [x] Security hardening
+  - [x] Error handling
+  - [x] Rate limiting
+  - [x] Testing
+  - [x] Logging
+  - [x] UI/UX improvements
 - [ ] Sprint 2: Hash-based file retrieval
-- [ ] Sprint 3: Improved UI and CORS testing
-- [ ] Sprint 4: Security and error handling
-- [ ] Sprint 5: Documentation and deployment 
+- [ ] Sprint 3: Advanced UI and search
+- [ ] Sprint 4: User authentication
+- [ ] Sprint 5: Admin dashboard
+
+## Contributing
+
+1. Create a feature branch: `git checkout -b feature-name`
+2. Make your changes
+3. Run tests: `pytest test_app.py`
+4. Commit: `git commit -am 'Add feature'`
+5. Push: `git push origin feature-name`
+6. Create a Pull Request
+
+## License
+
+MIT License - feel free to use this project for your own purposes. 

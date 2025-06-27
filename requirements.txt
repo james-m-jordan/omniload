@@ -1,4 +1,8 @@
 flask
 boto3
 python-dotenv
-gunicorn 
+gunicorn
+flask-limiter
+
+# Development dependencies
+pytest 
