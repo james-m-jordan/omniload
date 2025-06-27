@@ -2,10 +2,14 @@ import os
 import hashlib
 import sqlite3
 import logging
-from flask import Flask, request, jsonify, render_template_string
+import re
+from flask import Flask, request, jsonify, render_template_string, Response
+from flask_cors import CORS
+from werkzeug.utils import secure_filename
 from boto3.session import Session
 from dotenv import load_dotenv
 from io import BytesIO
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(
@@ -123,6 +127,22 @@ B2_APPLICATION_KEY = os.getenv('B2_APPLICATION_KEY')
 B2_BUCKET = os.getenv('B2_BUCKET')
 B2_ENDPOINT = os.getenv('B2_ENDPOINT')
 
+# Validate required environment variables
+required_vars = {
+    'B2_KEY_ID': B2_KEY_ID,
+    'B2_APPLICATION_KEY': B2_APPLICATION_KEY,
+    'B2_BUCKET': B2_BUCKET,
+    'B2_ENDPOINT': B2_ENDPOINT
+}
+
+missing_vars = [var for var, value in required_vars.items() if not value]
+if missing_vars:
+    logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
+    logger.error("Please set all required environment variables in .env or system environment")
+    exit(1)
+
+logger.info("Environment variables loaded successfully")
+
 # SQLite setup
 DB_PATH = 'metadata.db'
 def init_db():
@@ -185,6 +205,9 @@ s3 = session.client(
 )
 
 app = Flask(__name__)
+
+# Enable CORS for API usage
+CORS(app, origins=["*"], allow_headers=["Content-Type"])
 
 # Configure upload limits - removed artificial limit, let B2 handle it
 # B2 supports files up to 10TB, with parts from 5MB to 5GB
@@ -580,6 +603,34 @@ HTML_TEMPLATE = '''
 def index():
     return render_template_string(HTML_TEMPLATE)
 
+@app.route('/health')
+def health_check():
+    """Health check endpoint for monitoring."""
+    try:
+        # Check database connection
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('SELECT COUNT(*) FROM files')
+        file_count = c.fetchone()[0]
+        conn.close()
+        
+        # Check B2 connection
+        s3.list_buckets()
+        
+        return jsonify({
+            'status': 'healthy',
+            'timestamp': datetime.utcnow().isoformat(),
+            'file_count': file_count,
+            'version': '2.5.0'  # Large file support version
+        }), 200
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 503
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     try:
@@ -589,12 +640,17 @@ def upload_file():
         if file.filename == '':
             return jsonify({'error': 'No selected file'}), 400
         
+        # Sanitize filename for security
+        safe_filename = secure_filename(file.filename)
+        if not safe_filename:
+            safe_filename = 'unnamed_file'
+        
         # Check file size before reading
         file.seek(0, 2)  # Seek to end
         file_size = file.tell()
         file.seek(0)  # Reset to beginning
         
-        logger.info(f"Upload attempt: {file.filename} ({format_file_size(file_size)})")
+        logger.info(f"Upload attempt: {safe_filename} ({format_file_size(file_size)})")
         
         # Validate file size
         if file_size == 0:
@@ -602,15 +658,15 @@ def upload_file():
         
         # Get file metadata
         mime_type = file.mimetype
-        original_filename = file.filename
-        upload_ip = request.remote_addr
+        original_filename = safe_filename
+        upload_ip = request.remote_addr or 'unknown'
         
         # Calculate hash using chunked reading (memory efficient)
-        logger.info(f"Calculating hash for {file.filename}")
+        logger.info(f"Calculating hash for {safe_filename}")
         filehash = calculate_file_hash_chunked(file)
         
-        # Create S3 key with hash prefix
-        s3_key = f"{filehash[:8]}_{file.filename}"
+        # Create S3 key with hash prefix and sanitized filename
+        s3_key = f"{filehash[:8]}_{safe_filename}"
         
         logger.info(f"Uploading to B2: {s3_key} (size: {format_file_size(file_size)})")
         
@@ -634,7 +690,6 @@ def upload_file():
         # Construct public URL - using the correct B2 format
         # For B2, the public URL format is: https://fNNN.backblazeb2.com/file/BUCKET_NAME/KEY
         # Extract the file number from endpoint (e.g., f005 from s3.us-east-005.backblazeb2.com)
-        import re
         if B2_ENDPOINT:
             match = re.search(r's3\.(.+?)\.backblazeb2\.com', B2_ENDPOINT)
             if match:
@@ -669,18 +724,53 @@ def upload_file():
             'info_url': f"/f/{filehash[:8]}"
         })
     except Exception as e:
-        logger.error(f"Upload failed for {file.filename if 'file' in locals() else 'unknown'}: {str(e)}")
+        logger.error(f"Upload failed for {safe_filename if 'safe_filename' in locals() else 'unknown'}: {str(e)}")
         logger.exception("Full traceback:")
         return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 @app.route('/files')
 def list_files():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT filename, filehash, url, created_at FROM files ORDER BY created_at DESC LIMIT 50')
-    files = [{'filename': row[0], 'hash': row[1], 'url': row[2], 'created_at': row[3]} for row in c.fetchall()]
-    conn.close()
-    return jsonify(files)
+    """List recent files with full metadata."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''SELECT filename, original_filename, filehash, file_size, 
+                            mime_type, created_at, download_count 
+                     FROM files 
+                     ORDER BY created_at DESC 
+                     LIMIT 50''')
+        
+        files = []
+        for row in c.fetchall():
+            files.append({
+                'filename': row[0],
+                'original_filename': row[1] or row[0],
+                'hash': row[2],
+                'hash_short': row[2][:8] if row[2] else '',
+                'size': format_file_size(row[3]) if row[3] else 'Unknown',
+                'mime_type': row[4] or 'application/octet-stream',
+                'created_at': row[5],
+                'download_count': row[6] or 0,
+                'info_url': f"/f/{row[2][:8]}" if row[2] else ''
+            })
+        
+        conn.close()
+        
+        response = jsonify({
+            'files': files,
+            'count': len(files),
+            'limit': 50
+        })
+        
+        # Add rate limit headers (informational)
+        response.headers['X-RateLimit-Limit'] = '1000'
+        response.headers['X-RateLimit-Remaining'] = '999'
+        response.headers['X-RateLimit-Reset'] = str(int(datetime.utcnow().timestamp()) + 3600)
+        
+        return response
+    except Exception as e:
+        logger.error(f"Error listing files: {e}")
+        return jsonify({'error': 'Failed to list files'}), 500
 
 @app.route('/f/<hash_prefix>')
 def get_file_by_hash(hash_prefix):
@@ -1093,4 +1183,6 @@ SEARCH_TEMPLATE = '''
 '''
 
 if __name__ == '__main__':
-    app.run(debug=True) 
+    # Never run with debug=True in production!
+    # Use gunicorn or another production WSGI server
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000))) 

@@ -88,7 +88,10 @@ omniload/
 | `/upload` | POST | Upload a file |
 | `/f/<hash>` | GET | Get file by hash (min 8 chars) |
 | `/search` | GET | Search files |
-| `/files` | GET | List recent files (JSON) |
+| `/files` | GET | List recent files with metadata (JSON) |
+| `/health` | GET | Health check endpoint for monitoring |
+
+**Note**: CORS is enabled for all endpoints, making the API accessible from web applications.
 
 ## 🗄️ Database Schema
 

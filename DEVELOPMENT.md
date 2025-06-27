@@ -67,6 +67,23 @@ This guide covers the technical details of OmniLoad's implementation, architectu
 - Real-time progress tracking in UI
 - Automatic upload method selection based on file size
 
+### Sprint 2.6: Production Polish (Latest)
+- Removed debug mode from production
+- Added environment variable validation
+- Implemented CORS support for API usage
+- Added health check endpoint (/health)
+- Enhanced security with filename sanitization
+- Improved error handling and logging
+- Added rate limit headers (informational)
+- Enhanced /files endpoint with full metadata
+
+**Production Features**:
+- Health monitoring endpoint
+- Secure filename handling
+- CORS enabled for API integration
+- Professional error responses
+- No debug mode in production
+
 ## 📁 Code Structure
 
 ### Main Application (`app.py`)
