@@ -115,23 +115,67 @@ def upload_file():
     file = request.files['file']
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
-    data = file.read()
-    filehash = hashlib.sha256(data).hexdigest()
-    s3_key = filehash + '_' + file.filename
-    s3.upload_fileobj(
-        Fileobj=open(file.stream.name, 'rb') if hasattr(file.stream, 'name') else file,
-        Bucket=B2_BUCKET,
-        Key=s3_key
-    )
-    url = f"{B2_ENDPOINT}/{B2_BUCKET}/{s3_key}"
-    # Store metadata
+    
+    # Read file data
+    file_data = file.read()
+    file.seek(0)  # Reset file pointer
+    
+    # Calculate hash
+    filehash = hashlib.sha256(file_data).hexdigest()
+    
+    # Create S3 key with hash prefix
+    s3_key = f"{filehash[:8]}_{file.filename}"
+    
+    try:
+        # Upload to B2
+        s3.upload_fileobj(
+            Fileobj=BytesIO(file_data),
+            Bucket=B2_BUCKET,
+            Key=s3_key,
+            ExtraArgs={'ACL': 'public-read'}  # Make file publicly accessible
+        )
+        
+        # Construct public URL - using the correct B2 format
+        # For B2, the public URL format is: https://fNNN.backblazeb2.com/file/BUCKET_NAME/KEY
+        # Extract the file number from endpoint (e.g., f004 from s3.us-west-004.backblazeb2.com)
+        import re
+        if B2_ENDPOINT:
+            match = re.search(r's3\.(.+?)\.backblazeb2\.com', B2_ENDPOINT)
+            if match:
+                region = match.group(1)
+                # Convert us-west-004 to f004
+                file_num = 'f' + region.split('-')[-1].lstrip('0')
+                url = f"https://{file_num}.backblazeb2.com/file/{B2_BUCKET}/{s3_key}"
+            else:
+                # Fallback to constructed URL
+                url = f"{B2_ENDPOINT}/{B2_BUCKET}/{s3_key}"
+        else:
+            url = f"https://f004.backblazeb2.com/file/{B2_BUCKET}/{s3_key}"
+        
+        # Store metadata
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('INSERT INTO files (filename, filehash, url) VALUES (?, ?, ?)',
+                  (file.filename, filehash, url))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'filename': file.filename, 
+            'hash': filehash, 
+            'url': url
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/files')
+def list_files():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('INSERT INTO files (filename, filehash, url) VALUES (?, ?, ?)',
-              (file.filename, filehash, url))
-    conn.commit()
+    c.execute('SELECT filename, filehash, url, created_at FROM files ORDER BY created_at DESC LIMIT 50')
+    files = [{'filename': row[0], 'hash': row[1], 'url': row[2], 'created_at': row[3]} for row in c.fetchall()]
     conn.close()
-    return jsonify({'filename': file.filename, 'hash': filehash, 'url': url})
+    return jsonify(files)
 
 if __name__ == '__main__':
     app.run(debug=True) 
