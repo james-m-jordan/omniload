@@ -1,98 +1,202 @@
-# OmniLoad - Cloud File Uploader with Hash-Based Access
+# 🚀 OmniLoad
 
-A simple file uploader that stores files in Backblaze B2 with hash-based naming for deduplication.
+A fast, secure file upload service with hash-based retrieval. Upload files and share them using short, hash-based URLs.
 
-## Features
+## ✨ Features
 
-- Upload files to Backblaze B2
-- SHA256 hash-based file naming
-- SQLite metadata storage
-- Simple web UI for uploads
-- Public file access URLs
+### Core Features (Sprint 1 & 2)
+- **Hash-Based URLs**: Every file gets a unique SHA256 hash, accessible via short URLs like `/f/a1b2c3d4`
+- **File Upload**: Drag-and-drop or click to upload files to Backblaze B2
+- **Search**: Search files by filename or hash
+- **Download Tracking**: Track how many times each file has been accessed
+- **File Info Pages**: Beautiful pages showing file metadata, download counts, and direct links
+- **Smart Disambiguation**: When multiple files share a hash prefix, users see a selection page
 
-## Important: Bucket Configuration
+### Technical Features
+- **SQLite Database**: Lightweight metadata storage with automatic migrations
+- **Backblaze B2 Integration**: Reliable cloud storage using S3-compatible API
+- **Responsive Design**: Works great on desktop and mobile
+- **Progress Feedback**: Real-time upload status
+- **Human-Readable Sizes**: File sizes shown in KB, MB, GB format
 
-**Your Backblaze B2 bucket must be set to "Public" for file URLs to work!**
+## 🛠️ Tech Stack
 
-Currently, your bucket shows as "Private". To fix this:
-1. Go to your Backblaze B2 console
-2. Click on "Bucket Settings" for `freeload-uploads`
-3. Change "Files in Bucket are:" from "Private" to "Public"
-4. Save the changes
+- **Backend**: Python, Flask
+- **Storage**: Backblaze B2 (S3-compatible)
+- **Database**: SQLite
+- **Deployment**: Railway
+- **Frontend**: Vanilla JS, Modern CSS
 
-## Local Development
+## 🚀 Quick Start
 
-1. Clone the repository
-2. Copy `.env.example` to `.env` and fill in your Backblaze B2 credentials:
+### Prerequisites
+- Python 3.8+
+- Backblaze B2 account with:
+  - A private bucket
+  - Application key with read/write permissions
+
+### Local Development
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/james-m-jordan/omniload.git
+   cd omniload
    ```
-   B2_KEY_ID=your_key_id
-   B2_APPLICATION_KEY=your_application_key
-   B2_BUCKET=freeload-uploads
-   B2_ENDPOINT=https://s3.us-east-005.backblazeb2.com
-   ```
-3. Install dependencies:
+
+2. **Install dependencies**
    ```bash
    pip install -r requirements.txt
    ```
-4. Run the app:
+
+3. **Set up environment variables**
+   Create a `.env` file:
+   ```env
+   B2_KEY_ID=your_key_id
+   B2_APPLICATION_KEY=your_app_key
+   B2_BUCKET=your_bucket_name
+   B2_ENDPOINT=https://s3.us-east-005.backblazeb2.com
+   ```
+
+4. **Run the app**
    ```bash
    python app.py
    ```
-5. Open http://localhost:5000 in your browser
 
-## Deployment on Railway
+5. **Visit** http://localhost:5000
 
-### Prerequisites
-- A [Railway](https://railway.app) account
-- A GitHub account
-- Backblaze B2 bucket with appropriate CORS settings and **public visibility**
+## 📁 Project Structure
 
-### Steps
+```
+omniload/
+├── app.py              # Main Flask application
+├── requirements.txt    # Python dependencies
+├── railway.json        # Railway deployment config
+├── metadata.db         # SQLite database (auto-created)
+└── README.md          # This file
+```
 
-1. **Push to GitHub**
+## 🔗 API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Upload page |
+| `/upload` | POST | Upload a file |
+| `/f/<hash>` | GET | Get file by hash (min 8 chars) |
+| `/search` | GET | Search files |
+| `/files` | GET | List recent files (JSON) |
+
+## 🗄️ Database Schema
+
+```sql
+CREATE TABLE files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,           -- S3 key name
+    original_filename TEXT,           -- User's original filename
+    filehash TEXT NOT NULL,          -- SHA256 hash
+    file_size INTEGER,               -- Size in bytes
+    mime_type TEXT,                  -- MIME type
+    url TEXT NOT NULL,               -- Public B2 URL
+    upload_ip TEXT,                  -- Uploader's IP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    download_count INTEGER DEFAULT 0  -- Access counter
+);
+```
+
+## 🚢 Deployment
+
+### Railway (Recommended)
+
+1. **Install Railway CLI**
    ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git remote add origin YOUR_GITHUB_REPO_URL
-   git push -u origin main
+   npm install -g @railway/cli
    ```
 
-2. **Deploy on Railway**
-   - Go to [railway.app](https://railway.app)
-   - Click "New Project"
-   - Select "Deploy from GitHub repo"
-   - Choose your repository
-   - Railway will automatically detect the Python app
+2. **Login and initialize**
+   ```bash
+   railway login
+   railway init
+   ```
 
-3. **Add Environment Variables**
-   In Railway dashboard, go to Variables and add:
-   - `B2_KEY_ID` - Your Backblaze Key ID
-   - `B2_APPLICATION_KEY` - Your Backblaze Application Key
-   - `B2_BUCKET` - Your bucket name (freeload-uploads)
-   - `B2_ENDPOINT` - Your B2 endpoint (https://s3.us-east-005.backblazeb2.com)
+3. **Set environment variables**
+   ```bash
+   railway variables set B2_KEY_ID=your_key_id
+   railway variables set B2_APPLICATION_KEY=your_app_key
+   railway variables set B2_BUCKET=your_bucket_name
+   railway variables set B2_ENDPOINT=https://s3.us-east-005.backblazeb2.com
+   ```
 
 4. **Deploy**
-   - Railway will automatically deploy your app
-   - You'll get a URL like `https://your-app.up.railway.app`
+   ```bash
+   railway up
+   ```
 
-## API Endpoints
+### Manual Deployment
 
-- `GET /` - Web UI for file upload
-- `POST /upload` - Upload a file (multipart/form-data)
-- `GET /files` - List recent uploads (JSON)
+The app includes a `gunicorn` server for production use:
 
-## Security Notes
+```bash
+gunicorn app:app --bind 0.0.0.0:$PORT
+```
 
-- The current implementation makes all uploaded files publicly accessible
-- Consider adding authentication for production use
-- Add file size limits and type validation
-- Use environment variables for all sensitive data
+## 🔧 Configuration
 
-## Sprint Progress
+### Backblaze B2 Setup
 
-- [x] Sprint 1: Basic file upload functionality
-- [ ] Sprint 2: Hash-based file retrieval
-- [ ] Sprint 3: Improved UI and CORS testing
-- [ ] Sprint 4: Security and error handling
-- [ ] Sprint 5: Documentation and deployment 
+1. Create a private bucket
+2. Generate an application key with:
+   - Read and write access
+   - Access to your bucket
+3. Note your endpoint (e.g., `s3.us-east-005.backblazeb2.com`)
+4. Files are accessible at: `https://f005.backblazeb2.com/file/BUCKET_NAME/FILENAME`
+
+### Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `B2_KEY_ID` | Backblaze Key ID | `0051234567890ab` |
+| `B2_APPLICATION_KEY` | Backblaze Application Key | `K005xyz...` |
+| `B2_BUCKET` | Bucket name | `my-uploads` |
+| `B2_ENDPOINT` | S3 endpoint | `https://s3.us-east-005.backblazeb2.com` |
+
+## 📈 Future Enhancements (Planned Sprints)
+
+### Sprint 3: Enhanced UI & CORS
+- File preview for images/videos
+- Bulk upload support
+- CORS configuration for API usage
+- Progress bars for large files
+
+### Sprint 4: Security & Features
+- Password-protected files
+- Expiring links
+- File encryption
+- Admin dashboard
+- Rate limiting
+
+### Sprint 5: Polish & Scale
+- CDN integration
+- Virus scanning
+- Compression
+- Analytics
+- API documentation
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📝 License
+
+This project is open source and available under the MIT License.
+
+## 🙏 Acknowledgments
+
+Built with speed and iteration in mind. From idea to production in 90 minutes, then enhanced with proper architecture and features.
+
+---
+
+**Live Demo**: Deploy your own instance to try it out!
+**Issues**: Please report any bugs or feature requests in the GitHub issues. 

@@ -8,34 +8,44 @@ env/
 venv/
 ENV/
 .venv
-
-# Environment variables
-.env
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+*.egg-info/
+dist/
+build/
 
 # Database
 *.db
 *.sqlite
 *.sqlite3
 
+# Environment
+.env
+.env.local
+.env.*.local
+
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# OS
+*~
 .DS_Store
-Thumbs.db
 
 # Logs
 *.log
+logs/
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
+# Uploads (if storing locally during dev)
+uploads/
+temp/
 
-# Distribution
-dist/
-build/
-*.egg-info/ 
+# Railway
+.railway/
+
+# Credentials
+credentials.txt
+secrets.txt
+*.pem
+*.key 
