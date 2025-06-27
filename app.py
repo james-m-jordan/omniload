@@ -96,6 +96,15 @@ s3 = session.client(
 
 app = Flask(__name__)
 
+# Configure upload limits
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
+app.config['UPLOAD_FOLDER'] = '/tmp'  # Temporary storage if needed
+
+# Error handler for file too large
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    return jsonify({'error': 'File too large. Maximum size is 100MB'}), 413
+
 # Simple HTML form for file upload
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
@@ -331,29 +340,43 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    
-    # Read file data
-    file_data = file.read()
-    file.seek(0)  # Reset file pointer
-    
-    # Get file metadata
-    file_size = len(file_data)
-    mime_type = file.mimetype
-    original_filename = file.filename
-    upload_ip = request.remote_addr
-    
-    # Calculate hash
-    filehash = hashlib.sha256(file_data).hexdigest()
-    
-    # Create S3 key with hash prefix
-    s3_key = f"{filehash[:8]}_{file.filename}"
-    
     try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file part'}), 400
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
+        
+        # Check file size before reading
+        file.seek(0, 2)  # Seek to end
+        file_size = file.tell()
+        file.seek(0)  # Reset to beginning
+        
+        logger.info(f"Upload attempt: {file.filename} ({format_file_size(file_size)})")
+        
+        # Validate file size
+        if file_size > app.config['MAX_CONTENT_LENGTH']:
+            return jsonify({'error': f'File too large. Maximum size is {format_file_size(app.config["MAX_CONTENT_LENGTH"])}'}), 413
+        
+        if file_size == 0:
+            return jsonify({'error': 'File is empty'}), 400
+        
+        # Read file data
+        file_data = file.read()
+        
+        # Get file metadata
+        mime_type = file.mimetype
+        original_filename = file.filename
+        upload_ip = request.remote_addr
+        
+        # Calculate hash
+        filehash = hashlib.sha256(file_data).hexdigest()
+        
+        # Create S3 key with hash prefix
+        s3_key = f"{filehash[:8]}_{file.filename}"
+        
+        logger.info(f"Uploading to B2: {s3_key}")
+        
         # Upload to B2
         s3.upload_fileobj(
             Fileobj=BytesIO(file_data),
@@ -361,6 +384,8 @@ def upload_file():
             Key=s3_key
             # Note: Removed ACL since bucket is private
         )
+        
+        logger.info(f"B2 upload successful: {s3_key}")
         
         # Construct public URL - using the correct B2 format
         # For B2, the public URL format is: https://fNNN.backblazeb2.com/file/BUCKET_NAME/KEY
@@ -400,8 +425,9 @@ def upload_file():
             'info_url': f"/f/{filehash[:8]}"
         })
     except Exception as e:
-        logger.error(f"Upload failed: {e}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Upload failed for {file.filename if 'file' in locals() else 'unknown'}: {str(e)}")
+        logger.exception("Full traceback:")
+        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 @app.route('/files')
 def list_files():
