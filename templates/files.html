@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Recent Files - OmniLoad{% endblock %}
+
+{% block content %}
+<div class="gallery-container">
+    <div class="gallery-header">
+        <h1 class="logo">Recent Files</h1>
+        <div>
+            <a href="/" class="btn btn-primary">Upload New</a>
+            <a href="/search" class="btn btn-secondary">Search</a>
+        </div>
+    </div>
+    
+    {% if files %}
+    <div class="gallery-grid">
+        {% for file in files %}
+        <div class="file-card" onclick="window.location.href='{{ file.info_url }}'">
+            <div class="file-icon">
+                {% if file.mime_type and file.mime_type.startswith('image/') %}
+                    🖼️
+                {% elif file.mime_type and file.mime_type.startswith('video/') %}
+                    🎥
+                {% elif file.mime_type and file.mime_type.startswith('audio/') %}
+                    🎵
+                {% elif file.mime_type and 'pdf' in file.mime_type %}
+                    📄
+                {% elif file.mime_type and ('zip' in file.mime_type or 'rar' in file.mime_type or 'tar' in file.mime_type) %}
+                    📦
+                {% elif file.mime_type and ('text' in file.mime_type or 'code' in file.original_filename) %}
+                    📝
+                {% else %}
+                    📁
+                {% endif %}
+            </div>
+            <div class="file-name">{{ file.original_filename }}</div>
+            <div class="file-meta">
+                <div>{{ file.size }}</div>
+                <div>{{ file.created_at | default('Recently') }}</div>
+            </div>
+            {% if file.download_count > 0 %}
+            <div class="file-meta">
+                <small>Downloaded {{ file.download_count }} time{{ 's' if file.download_count != 1 else '' }}</small>
+            </div>
+            {% endif %}
+            <div class="file-hash">{{ file.hash_short }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 3rem; color: var(--muted-foreground);">
+        <p style="font-size: 3rem; margin-bottom: 1rem;">📭</p>
+        <p>No files uploaded yet. <a href="/" style="color: var(--primary);">Upload your first file</a></p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-refresh every 30 seconds to show new files
+setInterval(() => {
+    if (!document.hidden) {
+        fetch('/files')
+            .then(response => response.json())
+            .then(data => {
+                // Only refresh if there are new files
+                if (data.files && data.files.length > 0) {
+                    // Could implement smart refresh here
+                }
+            });
+    }
+}, 30000);
+</script>
+{% endblock %} 

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}{{ original_filename or filename }} - OmniLoad{% endblock %}
+
+{% block content %}
+<div class="gallery-container" style="max-width: var(--max-width); margin: 0 auto;">
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <h1 class="logo" style="font-size: 2rem;">{{ original_filename or filename }}</h1>
+    </div>
+    
+    <div class="file-card" style="max-width: 600px; margin: 0 auto; cursor: default;">
+        <div class="file-icon" style="text-align: center; font-size: 4rem;">
+            {% if mime_type and mime_type.startswith('image/') %}
+                🖼️
+            {% elif mime_type and mime_type.startswith('video/') %}
+                🎥
+            {% elif mime_type and mime_type.startswith('audio/') %}
+                🎵
+            {% elif mime_type and 'pdf' in mime_type %}
+                📄
+            {% elif mime_type and ('zip' in mime_type or 'rar' in mime_type or 'tar' in mime_type) %}
+                📦
+            {% elif mime_type and ('text' in mime_type or 'code' in original_filename) %}
+                📝
+            {% else %}
+                📁
+            {% endif %}
+        </div>
+        
+        <div style="margin: 2rem 0;">
+            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
+                <span style="color: var(--muted-foreground);">File Name</span>
+                <span>{{ filename }}</span>
+            </div>
+            {% if original_filename and original_filename != filename %}
+            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
+                <span style="color: var(--muted-foreground);">Original Name</span>
+                <span>{{ original_filename }}</span>
+            </div>
+            {% endif %}
+            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
+                <span style="color: var(--muted-foreground);">Size</span>
+                <span>{{ file_size }}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
+                <span style="color: var(--muted-foreground);">Type</span>
+                <span>{{ mime_type or 'Unknown' }}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
+                <span style="color: var(--muted-foreground);">Uploaded</span>
+                <span>{{ created_at }}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
+                <span style="color: var(--muted-foreground);">Downloads</span>
+                <span>{{ download_count }}</span>
+            </div>
+            <div style="padding: 0.75rem 0;">
+                <div style="color: var(--muted-foreground); margin-bottom: 0.5rem;">SHA256 Hash</div>
+                <code style="font-size: 0.875rem; word-break: break-all; color: var(--primary);">{{ filehash }}</code>
+            </div>
+        </div>
+        
+        <div style="text-align: center; margin: 2rem 0;">
+            <a href="{{ url }}" class="btn btn-primary" target="_blank" style="margin-right: 0.5rem;">
+                ⬇️ Download File
+            </a>
+            <button class="btn btn-secondary" onclick="copyToClipboard('{{ request.host_url }}f/{{ filehash[:8] }}')">
+                📋 Copy Link
+            </button>
+        </div>
+        
+        <div style="background: var(--secondary); padding: 1rem; border-radius: var(--radius); margin-top: 2rem;">
+            <div style="font-size: 0.875rem; color: var(--muted-foreground); margin-bottom: 0.5rem;">Share URL</div>
+            <code style="font-size: 0.875rem; color: var(--foreground);">{{ request.host_url }}f/{{ filehash[:8] }}</code>
+        </div>
+    </div>
+    
+    <div style="text-align: center; margin-top: 3rem;">
+        <a href="/" class="btn btn-secondary">Upload Another</a>
+        <a href="/files" class="btn btn-secondary">View All Files</a>
+        <a href="/search" class="btn btn-secondary">Search</a>
+    </div>
+</div>
+
+<div id="notification" style="position: fixed; bottom: 2rem; right: 2rem; background: var(--primary); color: white; padding: 1rem 1.5rem; border-radius: var(--radius); display: none; animation: slideUp 0.3s ease-out;">
+    Link copied to clipboard!
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        const notification = document.getElementById('notification');
+        notification.style.display = 'block';
+        setTimeout(() => {
+            notification.style.display = 'none';
+        }, 3000);
+    }).catch(() => {
+        alert('Failed to copy link. Please copy manually.');
+    });
+}
+</script>
+{% endblock %} 

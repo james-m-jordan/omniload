@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+
+{% block title %}OmniLoad - Upload Files{% endblock %}
+
+{% block content %}
+<div class="chat-container" id="chatContainer">
+    <div class="welcome-section">
+        <h1 class="logo">🚀 OmniLoad</h1>
+        <p class="tagline">Upload files of any size and share them instantly</p>
+        
+        <div class="message">
+            <div class="message-content">
+                Welcome! I can help you upload and share files up to 10TB. Just drag and drop or click below to get started.
+            </div>
+        </div>
+    </div>
+    
+    <div id="messageContainer"></div>
+</div>
+
+<div class="upload-section">
+    <form id="uploadForm" enctype="multipart/form-data">
+        <div class="upload-area" id="uploadArea">
+            <div class="upload-icon">📁</div>
+            <p class="upload-text">Drop your file here or click to browse</p>
+            <input type="file" id="fileInput" style="display: none;">
+            <button type="button" class="btn btn-secondary" onclick="document.getElementById('fileInput').click()">
+                Choose File
+            </button>
+        </div>
+        
+        <div class="progress-container" id="progressContainer" style="display: none;">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
+            </div>
+            <div class="progress-info">
+                <span id="progressText">0%</span>
+                <span id="progressSpeed"></span>
+            </div>
+        </div>
+    </form>
+    
+    <div style="text-align: center; margin-top: 1rem;">
+        <a href="/files" class="btn btn-secondary">View Recent Files</a>
+        <a href="/search" class="btn btn-secondary">Search Files</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const uploadArea = document.getElementById('uploadArea');
+const fileInput = document.getElementById('fileInput');
+const uploadForm = document.getElementById('uploadForm');
+const progressContainer = document.getElementById('progressContainer');
+const progressFill = document.getElementById('progressFill');
+const progressText = document.getElementById('progressText');
+const progressSpeed = document.getElementById('progressSpeed');
+const messageContainer = document.getElementById('messageContainer');
+const chatContainer = document.getElementById('chatContainer');
+
+// Helper function to add messages
+function addMessage(content, isUser = false) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${isUser ? 'user' : ''}`;
+    messageDiv.innerHTML = `<div class="message-content">${content}</div>`;
+    messageContainer.appendChild(messageDiv);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+// Format file size
+function formatFileSize(bytes) {
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let size = bytes;
+    let unitIndex = 0;
+    
+    while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024;
+        unitIndex++;
+    }
+    
+    return `${size.toFixed(1)} ${units[unitIndex]}`;
+}
+
+// Drag and drop
+uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('drag-over');
+});
+
+uploadArea.addEventListener('dragleave', () => {
+    uploadArea.classList.remove('drag-over');
+});
+
+uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('drag-over');
+    
+    if (e.dataTransfer.files.length > 0) {
+        fileInput.files = e.dataTransfer.files;
+        handleFileSelect(e.dataTransfer.files[0]);
+    }
+});
+
+// File selection
+fileInput.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+        handleFileSelect(e.target.files[0]);
+    }
+});
+
+function handleFileSelect(file) {
+    addMessage(`Selected: ${file.name} (${formatFileSize(file.size)})`, true);
+    addMessage(`Great! I'll upload "${file.name}" for you. This should just take a moment...`);
+    uploadFile(file);
+}
+
+// File upload
+async function uploadFile(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    uploadArea.style.display = 'none';
+    progressContainer.style.display = 'block';
+    
+    const startTime = Date.now();
+    let lastLoaded = 0;
+    let lastTime = startTime;
+    
+    try {
+        const xhr = new XMLHttpRequest();
+        
+        // Track upload progress
+        xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+                const percentComplete = Math.round((e.loaded / e.total) * 100);
+                progressFill.style.width = percentComplete + '%';
+                progressText.textContent = percentComplete + '%';
+                
+                // Calculate speed
+                const currentTime = Date.now();
+                const timeDiff = (currentTime - lastTime) / 1000; // seconds
+                const bytesDiff = e.loaded - lastLoaded;
+                const speed = bytesDiff / timeDiff; // bytes per second
+                
+                if (timeDiff > 0.5) { // Update speed every 0.5 seconds
+                    progressSpeed.textContent = `${formatFileSize(speed)}/s`;
+                    lastLoaded = e.loaded;
+                    lastTime = currentTime;
+                }
+                
+                if (percentComplete === 100) {
+                    progressSpeed.textContent = 'Processing...';
+                }
+            }
+        });
+        
+        // Handle response
+        xhr.addEventListener('load', () => {
+            progressContainer.style.display = 'none';
+            uploadArea.style.display = 'block';
+            
+            if (xhr.status === 200) {
+                const data = JSON.parse(xhr.responseText);
+                const shortUrl = `${window.location.origin}${data.info_url}`;
+                
+                addMessage(`
+                    <div class="alert alert-success">
+                        ✅ Upload successful!
+                    </div>
+                    <div style="margin-top: 1rem;">
+                        <strong>File:</strong> ${data.filename}<br>
+                        <strong>Size:</strong> ${data.size}<br>
+                        <strong>Hash:</strong> <code>${data.hash}</code><br>
+                        <strong>Share URL:</strong> <a href="${data.info_url}" target="_blank">${shortUrl}</a>
+                    </div>
+                    <div style="margin-top: 1rem;">
+                        <a href="${data.url}" target="_blank" class="btn btn-primary">Download File</a>
+                        <button class="btn btn-secondary" onclick="copyToClipboard('${shortUrl}')">Copy Link</button>
+                    </div>
+                `);
+                
+                // Reset form
+                uploadForm.reset();
+            } else {
+                const data = JSON.parse(xhr.responseText);
+                addMessage(`<div class="alert alert-error">❌ Upload failed: ${data.error}</div>`);
+            }
+        });
+        
+        xhr.addEventListener('error', () => {
+            progressContainer.style.display = 'none';
+            uploadArea.style.display = 'block';
+            addMessage(`<div class="alert alert-error">❌ Upload failed. Please try again.</div>`);
+        });
+        
+        xhr.open('POST', '/upload');
+        xhr.send(formData);
+        
+    } catch (error) {
+        progressContainer.style.display = 'none';
+        uploadArea.style.display = 'block';
+        addMessage(`<div class="alert alert-error">❌ Error: ${error.message}</div>`);
+    }
+}
+
+// Copy to clipboard
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        addMessage('Link copied to clipboard! 📋');
+    }).catch(() => {
+        addMessage('Failed to copy link. Please copy manually.');
+    });
+}
+</script>
+{% endblock %} 

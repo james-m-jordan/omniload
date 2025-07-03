@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Search Files - OmniLoad{% endblock %}
+
+{% block content %}
+<div class="gallery-container" style="max-width: var(--max-width); margin: 0 auto;">
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <h1 class="logo">🔍 Search Files</h1>
+    </div>
+    
+    <form method="get" action="/search">
+        <div class="search-container">
+            <span class="search-icon">🔍</span>
+            <input type="text" name="q" value="{{ query }}" placeholder="Search by filename or hash..." 
+                   class="search-input" autofocus>
+        </div>
+        <div style="text-align: center; margin-top: 1rem;">
+            <button type="submit" class="btn btn-primary">Search</button>
+            <a href="/" class="btn btn-secondary">Upload New</a>
+            <a href="/files" class="btn btn-secondary">View All</a>
+        </div>
+    </form>
+    
+    {% if error %}
+    <div class="alert alert-error" style="margin-top: 2rem;">
+        {{ error }}
+    </div>
+    {% endif %}
+    
+    {% if query %}
+    <div class="results-container">
+        <div style="margin-bottom: 1rem; color: var(--muted-foreground);">
+            Found {{ total }} result{{ 's' if total != 1 else '' }} for "{{ query }}"
+        </div>
+        
+        {% if results %}
+            {% for file in results %}
+            <div class="result-item" onclick="window.location.href='/f/{{ file.hash_short }}'">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div style="flex: 1;">
+                        <h3 style="margin: 0 0 0.5rem 0; color: var(--foreground);">
+                            {{ file.original_filename }}
+                        </h3>
+                        <div style="font-size: 0.875rem; color: var(--muted-foreground);">
+                            Size: {{ file.file_size }} | 
+                            Uploaded: {{ file.created_at }} | 
+                            Downloads: {{ file.download_count }}
+                        </div>
+                        <div style="font-family: monospace; font-size: 0.75rem; color: var(--primary); margin-top: 0.5rem;">
+                            {{ file.hash }}
+                        </div>
+                    </div>
+                    <div style="font-size: 2rem; opacity: 0.5;">
+                        {% if file.mime_type and file.mime_type.startswith('image/') %}
+                            🖼️
+                        {% elif file.mime_type and file.mime_type.startswith('video/') %}
+                            🎥
+                        {% elif file.mime_type and file.mime_type.startswith('audio/') %}
+                            🎵
+                        {% else %}
+                            📁
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div style="text-align: center; padding: 3rem; color: var(--muted-foreground);">
+                <p style="font-size: 3rem; margin-bottom: 1rem;">🔍</p>
+                <p>No files found matching your search.</p>
+            </div>
+        {% endif %}
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 3rem; color: var(--muted-foreground);">
+        <p>Enter a filename or hash to search for files.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %} 

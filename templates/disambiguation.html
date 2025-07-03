@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Multiple Files Found - OmniLoad{% endblock %}
+
+{% block content %}
+<div class="gallery-container" style="max-width: var(--max-width); margin: 0 auto;">
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <h1 class="logo">🔍 Multiple Files Found</h1>
+        <p style="color: var(--muted-foreground);">
+            Multiple files match the hash prefix <code style="color: var(--primary);">{{ hash_prefix }}</code>
+        </p>
+        <p style="color: var(--muted-foreground);">Please select the file you're looking for:</p>
+    </div>
+    
+    <div style="margin-top: 2rem;">
+        {% for file in files %}
+        <div class="result-item" onclick="window.location.href='/f/{{ file[2][:16] }}'">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="flex: 1;">
+                    <h3 style="margin: 0 0 0.5rem 0; color: var(--foreground);">
+                        {{ file[1] or file[0] }}
+                    </h3>
+                    <div style="font-family: monospace; font-size: 0.875rem; color: var(--primary); margin-bottom: 0.5rem;">
+                        {{ file[2] }}
+                    </div>
+                    <div style="font-size: 0.875rem; color: var(--muted-foreground);">
+                        Uploaded: {{ file[6] }}
+                    </div>
+                </div>
+                <div style="font-size: 2rem; opacity: 0.5;">
+                    📁
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <div style="text-align: center; margin-top: 3rem;">
+        <a href="/" class="btn btn-secondary">Upload Files</a>
+        <a href="/search" class="btn btn-secondary">Search</a>
+    </div>
+</div>
+{% endblock %} 
