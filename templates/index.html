@@ -9,7 +9,7 @@
         <p class="tagline">Upload files of any size and share them instantly</p>
         
         <div class="message">
-            <div class="message-content">
+            <div class="message-content" id="welcomeMessage">
                 Welcome! I can help you upload and share files up to 10TB. Just drag and drop or click below to get started.
             </div>
         </div>
@@ -131,6 +131,13 @@ async function uploadFile(file) {
     const formData = new FormData();
     formData.append('file', file);
     
+    // Check for library command in input
+    const libraryMatch = inputValue.match(/library:([a-zA-Z0-9_-]{12,})/i);
+    if (libraryMatch) {
+        formData.append('user_hash', libraryMatch[1]);
+        addMessage(`Adding to library: ${libraryMatch[1]}`);
+    }
+    
     uploadArea.style.display = 'none';
     progressContainer.style.display = 'block';
     
@@ -197,6 +204,16 @@ async function uploadFile(file) {
                             💬 Tell me more
                         </button>
                     </div>
+                    ${data.user_hash ? `
+                    <div style="margin-top: 1rem; padding: 1rem; background: var(--secondary); border-radius: var(--radius);">
+                        <strong>📚 Library:</strong> 
+                        <code style="cursor: pointer; padding: 0.25rem 0.5rem; background: var(--background);" 
+                              onclick="copyToClipboard('library:${data.user_hash}')" 
+                              title="Click to copy library command">${data.user_hash}</code><br>
+                        <a href="${data.library_url}" target="_blank">View library →</a><br>
+                        <small>💡 To add files to this library: paste "library:${data.user_hash}" in your message</small>
+                    </div>
+                    ` : ''}
                 `);
                 
                 // Reset form
@@ -337,5 +354,31 @@ async function askAboutFile(fileHash, filename) {
         addMessage('❌ Could not retrieve file information.');
     }
 }
+
+// Check for library parameter in URL
+document.addEventListener('DOMContentLoaded', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const libraryParam = urlParams.get('library');
+    
+    if (libraryParam) {
+        // Pre-set library ID in input
+        inputValue = `library:${libraryParam}`;
+        if (textareaRef.current) {
+            textareaRef.current.value = inputValue;
+        }
+        
+        // Update welcome message
+        const welcomeMsg = document.getElementById('welcomeMessage');
+        if (welcomeMsg) {
+            welcomeMsg.innerHTML = `
+                Ready to upload files to library: <code style="background: var(--background); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">${libraryParam}</code><br>
+                Just drag and drop your files or click below to add them to this library.
+            `;
+        }
+        
+        // Add a message about the library
+        addMessage(`📚 Files will be added to library: ${libraryParam}`);
+    }
+});
 </script>
 {% endblock %} 

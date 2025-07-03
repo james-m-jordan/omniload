@@ -53,6 +53,12 @@ def run_migration():
             logger.info("Added metadata_json column")
         except sqlite3.OperationalError:
             logger.info("Metadata_json column already exists")
+            
+        try:
+            c.execute("ALTER TABLE files ADD COLUMN user_hash TEXT")
+            logger.info("Added user_hash column")
+        except sqlite3.OperationalError:
+            logger.info("User_hash column already exists")
         
         # 2. Create tags table
         logger.info("Creating tags table...")
@@ -120,6 +126,7 @@ def run_migration():
         c.execute("CREATE INDEX IF NOT EXISTS idx_file_links_target ON file_links(target_file_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_file_collections_file ON file_collections(file_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_file_collections_collection ON file_collections(collection_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_user_hash ON files(user_hash)")
         
         # 8. Insert some default tags
         logger.info("Inserting default tags...")

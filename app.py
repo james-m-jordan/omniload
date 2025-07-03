@@ -162,7 +162,8 @@ def init_db():
             url TEXT NOT NULL,
             upload_ip TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            download_count INTEGER DEFAULT 0
+            download_count INTEGER DEFAULT 0,
+            user_hash TEXT
         )''')
         
         # Create index for faster hash lookups
@@ -178,7 +179,8 @@ def init_db():
             ('file_size', 'INTEGER'),
             ('mime_type', 'TEXT'),
             ('upload_ip', 'TEXT'),
-            ('download_count', 'INTEGER DEFAULT 0')
+            ('download_count', 'INTEGER DEFAULT 0'),
+            ('user_hash', 'TEXT')
         ]
         
         for col_name, col_type in columns_to_add:
@@ -282,6 +284,13 @@ def upload_file():
         if file.filename == '':
             return jsonify({'error': 'No selected file'}), 400
         
+        # Get user_hash from form data (for library grouping)
+        user_hash = request.form.get('user_hash', '')
+        if not user_hash:
+            # Generate a new library hash if none provided
+            import secrets
+            user_hash = secrets.token_hex(12)
+        
         # Sanitize filename for security
         safe_filename = secure_filename(file.filename)
         if not safe_filename:
@@ -349,13 +358,13 @@ def upload_file():
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('''INSERT INTO files 
-                    (filename, original_filename, filehash, file_size, mime_type, url, upload_ip) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                  (s3_key, original_filename, filehash, file_size, mime_type, url, upload_ip))
+                    (filename, original_filename, filehash, file_size, mime_type, url, upload_ip, user_hash) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                  (s3_key, original_filename, filehash, file_size, mime_type, url, upload_ip, user_hash))
         conn.commit()
         conn.close()
         
-        logger.info(f"File uploaded successfully: {original_filename} ({format_file_size(file_size)}) - Hash: {filehash[:8]}")
+        logger.info(f"File uploaded successfully: {original_filename} ({format_file_size(file_size)}) - Hash: {filehash[:8]} - Library: {user_hash}")
         
         return jsonify({
             'filename': original_filename, 
@@ -363,7 +372,9 @@ def upload_file():
             'hash_short': filehash[:8],
             'size': format_file_size(file_size),
             'url': url,
-            'info_url': f"/f/{filehash[:8]}"
+            'info_url': f"/f/{filehash[:8]}",
+            'user_hash': user_hash,
+            'library_url': f"/library/{user_hash}"
         })
     except Exception as e:
         logger.error(f"Upload failed for {safe_filename if 'safe_filename' in locals() else 'unknown'}: {str(e)}")
@@ -780,6 +791,68 @@ def handle_file_links(file_id):
         except Exception as e:
             logger.error(f"Error removing link: {e}")
             return jsonify({'error': 'Failed to remove link'}), 500
+
+@app.route('/library/<user_hash>')
+def view_library(user_hash):
+    """View all files in a library (user_hash group)."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''SELECT f.id, f.filename, f.original_filename, f.filehash, f.file_size, 
+                            f.mime_type, f.created_at, f.download_count, f.description, f.url,
+                            GROUP_CONCAT(t.name || ':' || t.color, ',') as tags
+                     FROM files f
+                     LEFT JOIN file_tags ft ON f.id = ft.file_id
+                     LEFT JOIN tags t ON ft.tag_id = t.id
+                     WHERE f.user_hash = ?
+                     GROUP BY f.id
+                     ORDER BY f.created_at DESC''', (user_hash,))
+        
+        files = []
+        for row in c.fetchall():
+            # Parse tags
+            tags = []
+            if row[10]:
+                for tag_data in row[10].split(','):
+                    if ':' in tag_data:
+                        name, color = tag_data.split(':', 1)
+                        tags.append({'name': name, 'color': color})
+            
+            files.append({
+                'id': row[0],
+                'filename': row[1],
+                'original_filename': row[2] or row[1],
+                'hash': row[3],
+                'hash_short': row[3][:8] if row[3] else '',
+                'size': format_file_size(row[4]) if row[4] else 'Unknown',
+                'mime_type': row[5] or 'application/octet-stream',
+                'created_at': row[6],
+                'download_count': row[7] or 0,
+                'description': row[8],
+                'url': row[9],
+                'tags': tags,
+                'info_url': f"/f/{row[3][:8]}" if row[3] else ''
+            })
+        
+        conn.close()
+        
+        # Check if this is an API request
+        if request.headers.get('Accept') == 'application/json':
+            return jsonify({
+                'user_hash': user_hash,
+                'files': files,
+                'total_files': len(files)
+            })
+        else:
+            # Return HTML template for browser requests
+            return render_template('library.html', user_hash=user_hash, files=files)
+            
+    except Exception as e:
+        logger.error(f"Error viewing library {user_hash}: {e}")
+        if request.headers.get('Accept') == 'application/json':
+            return jsonify({'error': 'Failed to load library'}), 500
+        else:
+            return render_template('library.html', user_hash=user_hash, files=[], error='Failed to load library')
 
 @app.route('/api/collections', methods=['GET', 'POST'])
 def handle_collections():
