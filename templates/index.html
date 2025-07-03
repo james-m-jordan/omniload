@@ -63,7 +63,18 @@ const chatContainer = document.getElementById('chatContainer');
 function addMessage(content, isUser = false) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${isUser ? 'user' : ''}`;
-    messageDiv.innerHTML = `<div class="message-content">${content}</div>`;
+    
+    // Convert basic markdown to HTML
+    let htmlContent = content;
+    if (typeof content === 'string') {
+        htmlContent = content
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/\n/g, '<br>')
+            .replace(/• /g, '&bull; ')
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+    }
+    
+    messageDiv.innerHTML = `<div class="message-content">${htmlContent}</div>`;
     messageContainer.appendChild(messageDiv);
     chatContainer.scrollTop = chatContainer.scrollHeight;
 }
@@ -178,6 +189,14 @@ async function uploadFile(file) {
                         <a href="${data.url}" target="_blank" class="btn btn-primary">Download File</a>
                         <button class="btn btn-secondary" onclick="copyToClipboard('${shortUrl}')">Copy Link</button>
                     </div>
+                    <div style="margin-top: 0.5rem;">
+                        <button class="btn btn-secondary" onclick="quickTag('${data.hash}', '${data.filename}')">
+                            🏷️ Quick Tag
+                        </button>
+                        <button class="btn btn-secondary" onclick="askAboutFile('${data.hash}', '${data.filename}')">
+                            💬 Tell me more
+                        </button>
+                    </div>
                 `);
                 
                 // Reset form
@@ -211,6 +230,112 @@ function copyToClipboard(text) {
     }).catch(() => {
         addMessage('Failed to copy link. Please copy manually.');
     });
+}
+
+// Quick tag function
+async function quickTag(fileHash, filename) {
+    const tagName = prompt(`Add a tag to "${filename}":`);
+    if (!tagName) return;
+    
+    try {
+        // Get file ID first
+        const filesResponse = await fetch('/files', {headers: {'Accept': 'application/json'}});
+        const filesData = await filesResponse.json();
+        const file = filesData.files.find(f => f.hash === fileHash);
+        
+        if (!file) {
+            addMessage('❌ Could not find file to tag.');
+            return;
+        }
+        
+        // Create or find tag
+        const tagResponse = await fetch('/api/tags', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: tagName})
+        });
+        
+        let tagId;
+        if (tagResponse.ok) {
+            const tag = await tagResponse.json();
+            tagId = tag.id;
+        } else {
+            // Tag might already exist, get all tags
+            const tagsResponse = await fetch('/api/tags');
+            const tagsData = await tagsResponse.json();
+            const existingTag = tagsData.tags.find(t => t.name.toLowerCase() === tagName.toLowerCase());
+            if (existingTag) {
+                tagId = existingTag.id;
+            } else {
+                addMessage('❌ Could not create tag.');
+                return;
+            }
+        }
+        
+        // Add tag to file
+        const addTagResponse = await fetch(`/api/files/${file.id}/tags`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({tag_id: tagId})
+        });
+        
+        if (addTagResponse.ok) {
+            addMessage(`✅ Tagged "${filename}" with "${tagName}"`);
+        } else {
+            addMessage('❌ Could not add tag to file.');
+        }
+    } catch (error) {
+        console.error('Tagging failed:', error);
+        addMessage('❌ Failed to add tag. Please try again.');
+    }
+}
+
+// Ask about file function
+async function askAboutFile(fileHash, filename) {
+    try {
+        // Get file metadata
+        const filesResponse = await fetch('/files', {headers: {'Accept': 'application/json'}});
+        const filesData = await filesResponse.json();
+        const file = filesData.files.find(f => f.hash === fileHash);
+        
+        if (!file) {
+            addMessage('❌ Could not find file information.');
+            return;
+        }
+        
+        // Get full metadata
+        const metadataResponse = await fetch(`/api/files/${file.id}/metadata`);
+        const metadata = await metadataResponse.json();
+        
+        let response = `Here's what I know about "${filename}":\n\n`;
+        response += `📊 **File Details:**\n`;
+        response += `• Size: ${metadata.size}\n`;
+        response += `• Type: ${metadata.mime_type}\n`;
+        response += `• Uploaded: ${new Date(metadata.created_at).toLocaleDateString()}\n`;
+        response += `• Downloads: ${metadata.download_count}\n`;
+        
+        if (metadata.tags && metadata.tags.length > 0) {
+            response += `\n🏷️ **Tags:** ${metadata.tags.map(t => t.name).join(', ')}\n`;
+        }
+        
+        if (metadata.description) {
+            response += `\n📝 **Description:** ${metadata.description}\n`;
+        }
+        
+        if (metadata.linked_files && metadata.linked_files.length > 0) {
+            response += `\n🔗 **Linked Files:** ${metadata.linked_files.length} file(s)\n`;
+        }
+        
+        response += `\n💡 **Quick Actions:**\n`;
+        response += `• Add tags or description in the [file details page](${window.location.origin}/f/${fileHash.substring(0, 8)})\n`;
+        response += `• Link this file to related files in the gallery view\n`;
+        response += `• Share using the short URL: ${window.location.origin}/f/${fileHash.substring(0, 8)}`;
+        
+        addMessage(response);
+    } catch (error) {
+        console.error('Failed to get file info:', error);
+        addMessage('❌ Could not retrieve file information.');
+    }
 }
 </script>
 {% endblock %} 

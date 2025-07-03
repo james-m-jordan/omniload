@@ -376,24 +376,39 @@ def list_files():
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute('''SELECT filename, original_filename, filehash, file_size, 
-                            mime_type, created_at, download_count 
-                     FROM files 
-                     ORDER BY created_at DESC 
+        c.execute('''SELECT f.id, f.filename, f.original_filename, f.filehash, f.file_size, 
+                            f.mime_type, f.created_at, f.download_count, f.description,
+                            GROUP_CONCAT(t.name || ':' || t.color, ',') as tags
+                     FROM files f
+                     LEFT JOIN file_tags ft ON f.id = ft.file_id
+                     LEFT JOIN tags t ON ft.tag_id = t.id
+                     GROUP BY f.id
+                     ORDER BY f.created_at DESC 
                      LIMIT 50''')
         
         files = []
         for row in c.fetchall():
+            # Parse tags
+            tags = []
+            if row[9]:
+                for tag_data in row[9].split(','):
+                    if ':' in tag_data:
+                        name, color = tag_data.split(':', 1)
+                        tags.append({'name': name, 'color': color})
+            
             files.append({
-                'filename': row[0],
-                'original_filename': row[1] or row[0],
-                'hash': row[2],
-                'hash_short': row[2][:8] if row[2] else '',
-                'size': format_file_size(row[3]) if row[3] else 'Unknown',
-                'mime_type': row[4] or 'application/octet-stream',
-                'created_at': row[5],
-                'download_count': row[6] or 0,
-                'info_url': f"/f/{row[2][:8]}" if row[2] else ''
+                'id': row[0],
+                'filename': row[1],
+                'original_filename': row[2] or row[1],
+                'hash': row[3],
+                'hash_short': row[3][:8] if row[3] else '',
+                'size': format_file_size(row[4]) if row[4] else 'Unknown',
+                'mime_type': row[5] or 'application/octet-stream',
+                'created_at': row[6],
+                'download_count': row[7] or 0,
+                'description': row[8],
+                'tags': tags,
+                'info_url': f"/f/{row[3][:8]}" if row[3] else ''
             })
         
         conn.close()
@@ -526,6 +541,291 @@ def search_files():
                              total=0,
                              error='Search failed. Please try again.')
 
+# Metadata API Endpoints
+@app.route('/api/files/<int:file_id>/metadata', methods=['GET', 'PUT'])
+def handle_file_metadata(file_id):
+    """Get or update file metadata."""
+    if request.method == 'GET':
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            
+            # Get file with all metadata
+            c.execute('''SELECT id, filename, original_filename, filehash, description, metadata_json,
+                               file_size, mime_type, created_at, download_count
+                        FROM files WHERE id = ?''', (file_id,))
+            file_data = c.fetchone()
+            
+            if not file_data:
+                conn.close()
+                return jsonify({'error': 'File not found'}), 404
+            
+            # Get tags
+            c.execute('''SELECT t.id, t.name, t.color 
+                        FROM tags t 
+                        JOIN file_tags ft ON t.id = ft.tag_id 
+                        WHERE ft.file_id = ?''', (file_id,))
+            tags = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in c.fetchall()]
+            
+            # Get linked files
+            c.execute('''SELECT f.id, f.original_filename, f.filehash, fl.link_type, fl.description
+                        FROM files f
+                        JOIN file_links fl ON (f.id = fl.target_file_id OR f.id = fl.source_file_id)
+                        WHERE (fl.source_file_id = ? OR fl.target_file_id = ?) AND f.id != ?''',
+                      (file_id, file_id, file_id))
+            linked_files = [{'id': row[0], 'filename': row[1], 'hash': row[2][:8], 
+                           'link_type': row[3], 'description': row[4]} for row in c.fetchall()]
+            
+            # Get collections
+            c.execute('''SELECT c.id, c.name, c.icon, c.color
+                        FROM collections c
+                        JOIN file_collections fc ON c.id = fc.collection_id
+                        WHERE fc.file_id = ?''', (file_id,))
+            collections = [{'id': row[0], 'name': row[1], 'icon': row[2], 'color': row[3]} 
+                          for row in c.fetchall()]
+            
+            conn.close()
+            
+            # Parse metadata_json if exists
+            import json as json_lib
+            metadata = {}
+            if file_data[5]:
+                try:
+                    metadata = json_lib.loads(file_data[5])
+                except:
+                    pass
+            
+            return jsonify({
+                'id': file_data[0],
+                'filename': file_data[1],
+                'original_filename': file_data[2],
+                'hash': file_data[3],
+                'description': file_data[4],
+                'metadata': metadata,
+                'size': format_file_size(file_data[6]) if file_data[6] else 'Unknown',
+                'mime_type': file_data[7],
+                'created_at': file_data[8],
+                'download_count': file_data[9],
+                'tags': tags,
+                'linked_files': linked_files,
+                'collections': collections
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting file metadata: {e}")
+            return jsonify({'error': 'Failed to get metadata'}), 500
+            
+    else:  # PUT
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'No data provided'}), 400
+            
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            
+            # Update description if provided
+            if 'description' in data:
+                c.execute('UPDATE files SET description = ? WHERE id = ?', 
+                         (data['description'], file_id))
+            
+            # Update metadata_json if provided
+            if 'metadata' in data:
+                import json as json_lib
+                metadata_json = json_lib.dumps(data['metadata'])
+                c.execute('UPDATE files SET metadata_json = ? WHERE id = ?', 
+                         (metadata_json, file_id))
+            
+            conn.commit()
+            conn.close()
+            
+            return jsonify({'success': True, 'message': 'Metadata updated'})
+            
+        except Exception as e:
+            logger.error(f"Error updating metadata: {e}")
+            return jsonify({'error': 'Failed to update metadata'}), 500
+
+@app.route('/api/tags', methods=['GET', 'POST'])
+def handle_tags():
+    """Get all tags or create a new tag."""
+    if request.method == 'GET':
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute('SELECT id, name, color FROM tags ORDER BY name')
+            tags = [{'id': row[0], 'name': row[1], 'color': row[2]} for row in c.fetchall()]
+            conn.close()
+            return jsonify({'tags': tags})
+        except Exception as e:
+            logger.error(f"Error getting tags: {e}")
+            return jsonify({'error': 'Failed to get tags'}), 500
+    
+    else:  # POST
+        try:
+            data = request.get_json()
+            if not data or 'name' not in data:
+                return jsonify({'error': 'Tag name required'}), 400
+            
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            color = data.get('color', '#3b82f6')
+            
+            c.execute('INSERT INTO tags (name, color) VALUES (?, ?)', 
+                     (data['name'], color))
+            tag_id = c.lastrowid
+            conn.commit()
+            conn.close()
+            
+            return jsonify({'id': tag_id, 'name': data['name'], 'color': color}), 201
+            
+        except sqlite3.IntegrityError:
+            return jsonify({'error': 'Tag already exists'}), 400
+        except Exception as e:
+            logger.error(f"Error creating tag: {e}")
+            return jsonify({'error': 'Failed to create tag'}), 500
+
+@app.route('/api/files/<int:file_id>/tags', methods=['POST', 'DELETE'])
+def handle_file_tags(file_id):
+    """Add or remove tags from a file."""
+    if request.method == 'POST':
+        try:
+            data = request.get_json()
+            if not data or 'tag_id' not in data:
+                return jsonify({'error': 'Tag ID required'}), 400
+            
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            
+            c.execute('INSERT INTO file_tags (file_id, tag_id) VALUES (?, ?)', 
+                     (file_id, data['tag_id']))
+            conn.commit()
+            conn.close()
+            
+            return jsonify({'success': True, 'message': 'Tag added'})
+            
+        except sqlite3.IntegrityError:
+            return jsonify({'error': 'Tag already assigned'}), 400
+        except Exception as e:
+            logger.error(f"Error adding tag: {e}")
+            return jsonify({'error': 'Failed to add tag'}), 500
+    
+    else:  # DELETE
+        try:
+            tag_id = request.args.get('tag_id')
+            if not tag_id:
+                return jsonify({'error': 'Tag ID required'}), 400
+            
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            
+            c.execute('DELETE FROM file_tags WHERE file_id = ? AND tag_id = ?', 
+                     (file_id, tag_id))
+            conn.commit()
+            conn.close()
+            
+            return jsonify({'success': True, 'message': 'Tag removed'})
+            
+        except Exception as e:
+            logger.error(f"Error removing tag: {e}")
+            return jsonify({'error': 'Failed to remove tag'}), 500
+
+@app.route('/api/files/<int:file_id>/links', methods=['POST', 'DELETE'])
+def handle_file_links(file_id):
+    """Create or remove links between files."""
+    if request.method == 'POST':
+        try:
+            data = request.get_json()
+            if not data or 'target_file_id' not in data:
+                return jsonify({'error': 'Target file ID required'}), 400
+            
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            
+            link_type = data.get('link_type', 'related')
+            description = data.get('description', '')
+            
+            c.execute('''INSERT INTO file_links (source_file_id, target_file_id, link_type, description) 
+                        VALUES (?, ?, ?, ?)''', 
+                     (file_id, data['target_file_id'], link_type, description))
+            link_id = c.lastrowid
+            conn.commit()
+            conn.close()
+            
+            return jsonify({'id': link_id, 'success': True, 'message': 'Link created'}), 201
+            
+        except sqlite3.IntegrityError:
+            return jsonify({'error': 'Link already exists'}), 400
+        except Exception as e:
+            logger.error(f"Error creating link: {e}")
+            return jsonify({'error': 'Failed to create link'}), 500
+    
+    else:  # DELETE
+        try:
+            target_file_id = request.args.get('target_file_id')
+            if not target_file_id:
+                return jsonify({'error': 'Target file ID required'}), 400
+            
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            
+            c.execute('''DELETE FROM file_links 
+                        WHERE (source_file_id = ? AND target_file_id = ?) 
+                           OR (source_file_id = ? AND target_file_id = ?)''', 
+                     (file_id, target_file_id, target_file_id, file_id))
+            conn.commit()
+            conn.close()
+            
+            return jsonify({'success': True, 'message': 'Link removed'})
+            
+        except Exception as e:
+            logger.error(f"Error removing link: {e}")
+            return jsonify({'error': 'Failed to remove link'}), 500
+
+@app.route('/api/collections', methods=['GET', 'POST'])
+def handle_collections():
+    """Get all collections or create a new collection."""
+    if request.method == 'GET':
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute('''SELECT id, name, description, icon, color, 
+                               (SELECT COUNT(*) FROM file_collections WHERE collection_id = collections.id) as file_count
+                        FROM collections ORDER BY name''')
+            collections = [{'id': row[0], 'name': row[1], 'description': row[2], 
+                          'icon': row[3], 'color': row[4], 'file_count': row[5]} 
+                         for row in c.fetchall()]
+            conn.close()
+            return jsonify({'collections': collections})
+        except Exception as e:
+            logger.error(f"Error getting collections: {e}")
+            return jsonify({'error': 'Failed to get collections'}), 500
+    
+    else:  # POST
+        try:
+            data = request.get_json()
+            if not data or 'name' not in data:
+                return jsonify({'error': 'Collection name required'}), 400
+            
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            
+            icon = data.get('icon', '📁')
+            color = data.get('color', '#3b82f6')
+            description = data.get('description', '')
+            
+            c.execute('''INSERT INTO collections (name, description, icon, color) 
+                        VALUES (?, ?, ?, ?)''', 
+                     (data['name'], description, icon, color))
+            collection_id = c.lastrowid
+            conn.commit()
+            conn.close()
+            
+            return jsonify({'id': collection_id, 'name': data['name'], 
+                          'description': description, 'icon': icon, 'color': color}), 201
+            
+        except Exception as e:
+            logger.error(f"Error creating collection: {e}")
+            return jsonify({'error': 'Failed to create collection'}), 500
 
 
 if __name__ == '__main__':

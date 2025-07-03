@@ -9,41 +9,71 @@
         <div>
             <a href="/" class="btn btn-primary">Upload New</a>
             <a href="/search" class="btn btn-secondary">Search</a>
+            <button class="btn btn-secondary" onclick="showCollections()">
+                📚 Collections
+            </button>
         </div>
     </div>
     
     {% if files %}
     <div class="gallery-grid">
         {% for file in files %}
-        <div class="file-card" onclick="window.location.href='{{ file.info_url }}'">
-            <div class="file-icon">
-                {% if file.mime_type and file.mime_type.startswith('image/') %}
-                    🖼️
-                {% elif file.mime_type and file.mime_type.startswith('video/') %}
-                    🎥
-                {% elif file.mime_type and file.mime_type.startswith('audio/') %}
-                    🎵
-                {% elif file.mime_type and 'pdf' in file.mime_type %}
-                    📄
-                {% elif file.mime_type and ('zip' in file.mime_type or 'rar' in file.mime_type or 'tar' in file.mime_type) %}
-                    📦
-                {% elif file.mime_type and ('text' in file.mime_type or 'code' in file.original_filename) %}
-                    📝
-                {% else %}
-                    📁
+        <div class="file-card enhanced" data-file-id="{{ file.id }}">
+            <div class="file-card-header">
+                <div class="file-icon">
+                    {% if file.mime_type and file.mime_type.startswith('image/') %}
+                        🖼️
+                    {% elif file.mime_type and file.mime_type.startswith('video/') %}
+                        🎥
+                    {% elif file.mime_type and file.mime_type.startswith('audio/') %}
+                        🎵
+                    {% elif file.mime_type and 'pdf' in file.mime_type %}
+                        📄
+                    {% elif file.mime_type and ('zip' in file.mime_type or 'rar' in file.mime_type or 'tar' in file.mime_type) %}
+                        📦
+                    {% elif file.mime_type and ('text' in file.mime_type or 'code' in file.original_filename) %}
+                        📝
+                    {% else %}
+                        📁
+                    {% endif %}
+                </div>
+                <div class="file-actions">
+                    <button class="action-btn" onclick="editMetadata({{ file.id }})" title="Edit metadata">
+                        ✏️
+                    </button>
+                    <button class="action-btn" onclick="linkFiles({{ file.id }})" title="Link files">
+                        🔗
+                    </button>
+                </div>
+            </div>
+            
+            <div class="file-card-body" onclick="window.location.href='{{ file.info_url }}'">
+                <div class="file-name">{{ file.original_filename }}</div>
+                {% if file.description %}
+                <div class="file-description">{{ file.description }}</div>
                 {% endif %}
+                
+                {% if file.tags %}
+                <div class="file-tags">
+                    {% for tag in file.tags %}
+                    <span class="tag" data-color="{{ tag.color }}">
+                        {{ tag.name }}
+                    </span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                
+                <div class="file-meta">
+                    <div>{{ file.size }}</div>
+                    <div>{{ file.created_at | default('Recently') }}</div>
+                </div>
+                {% if file.download_count > 0 %}
+                <div class="file-meta">
+                    <small>Downloaded {{ file.download_count }} time{{ 's' if file.download_count != 1 else '' }}</small>
+                </div>
+                {% endif %}
+                <div class="file-hash">{{ file.hash_short }}</div>
             </div>
-            <div class="file-name">{{ file.original_filename }}</div>
-            <div class="file-meta">
-                <div>{{ file.size }}</div>
-                <div>{{ file.created_at | default('Recently') }}</div>
-            </div>
-            {% if file.download_count > 0 %}
-            <div class="file-meta">
-                <small>Downloaded {{ file.download_count }} time{{ 's' if file.download_count != 1 else '' }}</small>
-            </div>
-            {% endif %}
-            <div class="file-hash">{{ file.hash_short }}</div>
         </div>
         {% endfor %}
     </div>
@@ -54,22 +84,518 @@
     </div>
     {% endif %}
 </div>
+
+<!-- Metadata Edit Modal -->
+<div id="metadataModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Edit File Metadata</h2>
+            <button class="close-btn" onclick="closeModal('metadataModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="metadataForm">
+                <input type="hidden" id="fileId">
+                
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="fileDescription" rows="3" placeholder="Add a description..."></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label>Tags</label>
+                    <div id="tagSelector" class="tag-selector"></div>
+                    <input type="text" id="newTag" placeholder="Add new tag..." style="margin-top: 0.5rem;">
+                </div>
+                
+                <div class="form-group">
+                    <label>Custom Metadata</label>
+                    <textarea id="customMetadata" rows="4" placeholder='{"key": "value"}' style="font-family: monospace;"></textarea>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal('metadataModal')">Cancel</button>
+            <button class="btn btn-primary" onclick="saveMetadata()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- File Linking Modal -->
+<div id="linkModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Link Files</h2>
+            <button class="close-btn" onclick="closeModal('linkModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="sourceLinkFileId">
+            
+            <div class="form-group">
+                <label>Search for file to link</label>
+                <input type="text" id="linkSearch" placeholder="Search by filename or hash..." oninput="searchFilesToLink()">
+            </div>
+            
+            <div id="linkSearchResults" class="link-search-results"></div>
+            
+            <div class="form-group">
+                <label>Link Type</label>
+                <select id="linkType">
+                    <option value="related">Related</option>
+                    <option value="depends_on">Depends On</option>
+                    <option value="version_of">Version Of</option>
+                    <option value="part_of">Part Of</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>Description (optional)</label>
+                <input type="text" id="linkDescription" placeholder="Describe the relationship...">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal('linkModal')">Cancel</button>
+            <button class="btn btn-primary" onclick="createLink()">Create Link</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
+<style>
+.file-card.enhanced {
+    position: relative;
+    overflow: visible;
+}
+
+.file-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+}
+
+.file-actions {
+    display: flex;
+    gap: 0.5rem;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.file-card:hover .file-actions {
+    opacity: 1;
+}
+
+.action-btn {
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.25rem 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 1rem;
+}
+
+.action-btn:hover {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.file-description {
+    color: var(--muted-foreground);
+    font-size: 0.875rem;
+    margin: 0.5rem 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.file-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin: 0.5rem 0;
+}
+
+.tag {
+    font-size: 0.75rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    border: 1px solid;
+    display: inline-block;
+}
+
+/* Modal Styles */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: var(--secondary);
+    border-radius: var(--radius);
+    max-width: 600px;
+    width: 90%;
+    max-height: 90vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h2 {
+    margin: 0;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: var(--muted-foreground);
+    line-height: 1;
+}
+
+.modal-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.modal-footer {
+    padding: 1.5rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.form-group input[type="text"],
+.form-group textarea,
+.form-group select {
+    width: 100%;
+    padding: 0.5rem;
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--foreground);
+}
+
+.tag-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.tag-option {
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.tag-option.selected {
+    border-color: var(--primary);
+    background: var(--primary);
+}
+
+.link-search-results {
+    max-height: 200px;
+    overflow-y: auto;
+    margin: 1rem 0;
+}
+
+.link-result {
+    padding: 0.75rem;
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.link-result:hover {
+    border-color: var(--primary);
+}
+
+.link-result.selected {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+</style>
+
 <script>
+let currentFileId = null;
+let selectedTags = new Set();
+let availableTags = [];
+let selectedLinkTarget = null;
+
 // Auto-refresh every 30 seconds to show new files
 setInterval(() => {
     if (!document.hidden) {
-        fetch('/files')
+        fetch('/files', {headers: {'Accept': 'application/json'}})
             .then(response => response.json())
             .then(data => {
-                // Only refresh if there are new files
-                if (data.files && data.files.length > 0) {
-                    // Could implement smart refresh here
-                }
+                // Could implement smart refresh here
             });
     }
 }, 30000);
+
+// Load available tags
+async function loadTags() {
+    try {
+        const response = await fetch('/api/tags');
+        const data = await response.json();
+        availableTags = data.tags;
+    } catch (error) {
+        console.error('Failed to load tags:', error);
+    }
+}
+
+// Edit metadata
+async function editMetadata(fileId) {
+    currentFileId = fileId;
+    selectedTags.clear();
+    
+    try {
+        // Load current metadata
+        const response = await fetch(`/api/files/${fileId}/metadata`);
+        const data = await response.json();
+        
+        document.getElementById('fileId').value = fileId;
+        document.getElementById('fileDescription').value = data.description || '';
+        document.getElementById('customMetadata').value = JSON.stringify(data.metadata || {}, null, 2);
+        
+        // Set current tags
+        data.tags.forEach(tag => selectedTags.add(tag.id));
+        
+        // Render tag selector
+        renderTagSelector();
+        
+        // Show modal
+        document.getElementById('metadataModal').style.display = 'flex';
+    } catch (error) {
+        console.error('Failed to load metadata:', error);
+    }
+}
+
+function renderTagSelector() {
+    const container = document.getElementById('tagSelector');
+    container.innerHTML = '';
+    
+    availableTags.forEach(tag => {
+        const tagEl = document.createElement('div');
+        tagEl.className = `tag-option ${selectedTags.has(tag.id) ? 'selected' : ''}`;
+        tagEl.style.borderColor = tag.color;
+        tagEl.style.color = selectedTags.has(tag.id) ? 'white' : tag.color;
+        tagEl.innerHTML = tag.name;
+        tagEl.onclick = () => toggleTag(tag.id);
+        container.appendChild(tagEl);
+    });
+}
+
+function toggleTag(tagId) {
+    if (selectedTags.has(tagId)) {
+        selectedTags.delete(tagId);
+    } else {
+        selectedTags.add(tagId);
+    }
+    renderTagSelector();
+}
+
+async function saveMetadata() {
+    try {
+        // Update metadata
+        const metadataResponse = await fetch(`/api/files/${currentFileId}/metadata`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                description: document.getElementById('fileDescription').value,
+                metadata: JSON.parse(document.getElementById('customMetadata').value || '{}')
+            })
+        });
+        
+        if (!metadataResponse.ok) throw new Error('Failed to update metadata');
+        
+        // Update tags
+        // First, get current tags
+        const currentResponse = await fetch(`/api/files/${currentFileId}/metadata`);
+        const currentData = await currentResponse.json();
+        const currentTagIds = new Set(currentData.tags.map(t => t.id));
+        
+        // Remove tags that were unselected
+        for (const tagId of currentTagIds) {
+            if (!selectedTags.has(tagId)) {
+                await fetch(`/api/files/${currentFileId}/tags?tag_id=${tagId}`, {
+                    method: 'DELETE'
+                });
+            }
+        }
+        
+        // Add new tags
+        for (const tagId of selectedTags) {
+            if (!currentTagIds.has(tagId)) {
+                await fetch(`/api/files/${currentFileId}/tags`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({tag_id: tagId})
+                });
+            }
+        }
+        
+        // Handle new tag
+        const newTagName = document.getElementById('newTag').value.trim();
+        if (newTagName) {
+            const newTagResponse = await fetch('/api/tags', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name: newTagName})
+            });
+            
+            if (newTagResponse.ok) {
+                const newTag = await newTagResponse.json();
+                await fetch(`/api/files/${currentFileId}/tags`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({tag_id: newTag.id})
+                });
+            }
+        }
+        
+        // Close modal and refresh
+        closeModal('metadataModal');
+        location.reload();
+    } catch (error) {
+        console.error('Failed to save metadata:', error);
+        alert('Failed to save metadata: ' + error.message);
+    }
+}
+
+// File linking
+function linkFiles(fileId) {
+    currentFileId = fileId;
+    selectedLinkTarget = null;
+    document.getElementById('sourceLinkFileId').value = fileId;
+    document.getElementById('linkModal').style.display = 'flex';
+}
+
+async function searchFilesToLink() {
+    const query = document.getElementById('linkSearch').value;
+    if (!query) {
+        document.getElementById('linkSearchResults').innerHTML = '';
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/search?q=${encodeURIComponent(query)}`, {
+            headers: {'Accept': 'application/json'}
+        });
+        
+        // Since our search endpoint returns HTML, we need to use the files endpoint with filtering
+        // For now, we'll use a simple approach
+        const filesResponse = await fetch('/files', {headers: {'Accept': 'application/json'}});
+        const data = await filesResponse.json();
+        
+        const filtered = data.files.filter(f => 
+            f.id !== currentFileId && 
+            (f.original_filename.toLowerCase().includes(query.toLowerCase()) ||
+             f.hash.startsWith(query))
+        );
+        
+        const resultsHtml = filtered.map(file => `
+            <div class="link-result ${selectedLinkTarget === file.id ? 'selected' : ''}" 
+                 onclick="selectLinkTarget(${file.id}, '${file.original_filename}')">
+                <div>${file.original_filename}</div>
+                <div style="font-size: 0.75rem; color: var(--muted-foreground);">${file.hash_short}</div>
+            </div>
+        `).join('');
+        
+        document.getElementById('linkSearchResults').innerHTML = resultsHtml || '<p>No files found</p>';
+    } catch (error) {
+        console.error('Search failed:', error);
+    }
+}
+
+function selectLinkTarget(fileId, filename) {
+    selectedLinkTarget = fileId;
+    searchFilesToLink(); // Re-render to show selection
+}
+
+async function createLink() {
+    if (!selectedLinkTarget) {
+        alert('Please select a file to link');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/files/${currentFileId}/links`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                target_file_id: selectedLinkTarget,
+                link_type: document.getElementById('linkType').value,
+                description: document.getElementById('linkDescription').value
+            })
+        });
+        
+        if (!response.ok) throw new Error('Failed to create link');
+        
+        closeModal('linkModal');
+        alert('Link created successfully!');
+    } catch (error) {
+        console.error('Failed to create link:', error);
+        alert('Failed to create link: ' + error.message);
+    }
+}
+
+function closeModal(modalId) {
+    document.getElementById(modalId).style.display = 'none';
+}
+
+function showCollections() {
+    // TODO: Implement collections view
+    alert('Collections view coming soon!');
+}
+
+// Initialize
+loadTags();
+
+// Apply tag colors on page load
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.tag[data-color]').forEach(tag => {
+        const color = tag.getAttribute('data-color');
+        tag.style.backgroundColor = color + '20'; // Add transparency
+        tag.style.borderColor = color;
+        tag.style.color = color;
+    });
+});
 </script>
 {% endblock %} 

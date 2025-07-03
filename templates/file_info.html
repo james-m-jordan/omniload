@@ -1,104 +1,550 @@
 {% extends "base.html" %}
 
-{% block title %}{{ original_filename or filename }} - OmniLoad{% endblock %}
+{% block title %}{{ original_filename }} - OmniLoad{% endblock %}
 
 {% block content %}
-<div class="gallery-container" style="max-width: var(--max-width); margin: 0 auto;">
-    <div style="text-align: center; margin-bottom: 2rem;">
-        <h1 class="logo" style="font-size: 2rem;">{{ original_filename or filename }}</h1>
-    </div>
-    
-    <div class="file-card" style="max-width: 600px; margin: 0 auto; cursor: default;">
-        <div class="file-icon" style="text-align: center; font-size: 4rem;">
-            {% if mime_type and mime_type.startswith('image/') %}
-                🖼️
-            {% elif mime_type and mime_type.startswith('video/') %}
-                🎥
-            {% elif mime_type and mime_type.startswith('audio/') %}
-                🎵
-            {% elif mime_type and 'pdf' in mime_type %}
-                📄
-            {% elif mime_type and ('zip' in mime_type or 'rar' in mime_type or 'tar' in mime_type) %}
-                📦
-            {% elif mime_type and ('text' in mime_type or 'code' in original_filename) %}
-                📝
-            {% else %}
-                📁
-            {% endif %}
-        </div>
-        
-        <div style="margin: 2rem 0;">
-            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
-                <span style="color: var(--muted-foreground);">File Name</span>
-                <span>{{ filename }}</span>
-            </div>
-            {% if original_filename and original_filename != filename %}
-            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
-                <span style="color: var(--muted-foreground);">Original Name</span>
-                <span>{{ original_filename }}</span>
-            </div>
-            {% endif %}
-            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
-                <span style="color: var(--muted-foreground);">Size</span>
-                <span>{{ file_size }}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
-                <span style="color: var(--muted-foreground);">Type</span>
-                <span>{{ mime_type or 'Unknown' }}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
-                <span style="color: var(--muted-foreground);">Uploaded</span>
-                <span>{{ created_at }}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border);">
-                <span style="color: var(--muted-foreground);">Downloads</span>
-                <span>{{ download_count }}</span>
-            </div>
-            <div style="padding: 0.75rem 0;">
-                <div style="color: var(--muted-foreground); margin-bottom: 0.5rem;">SHA256 Hash</div>
-                <code style="font-size: 0.875rem; word-break: break-all; color: var(--primary);">{{ filehash }}</code>
-            </div>
-        </div>
-        
-        <div style="text-align: center; margin: 2rem 0;">
-            <a href="{{ url }}" class="btn btn-primary" target="_blank" style="margin-right: 0.5rem;">
-                ⬇️ Download File
-            </a>
-            <button class="btn btn-secondary" onclick="copyToClipboard('{{ request.host_url }}f/{{ filehash[:8] }}')">
-                📋 Copy Link
+<div class="file-info-container">
+    <div class="file-info-header">
+        <h1 class="file-title">{{ original_filename }}</h1>
+        <div class="file-actions">
+            <button class="btn btn-secondary" onclick="editMetadata()">
+                ✏️ Edit Metadata
             </button>
-        </div>
-        
-        <div style="background: var(--secondary); padding: 1rem; border-radius: var(--radius); margin-top: 2rem;">
-            <div style="font-size: 0.875rem; color: var(--muted-foreground); margin-bottom: 0.5rem;">Share URL</div>
-            <code style="font-size: 0.875rem; color: var(--foreground);">{{ request.host_url }}f/{{ filehash[:8] }}</code>
+            <a href="{{ url }}" class="btn btn-primary" download>
+                ⬇️ Download
+            </a>
         </div>
     </div>
-    
-    <div style="text-align: center; margin-top: 3rem;">
-        <a href="/" class="btn btn-secondary">Upload Another</a>
-        <a href="/files" class="btn btn-secondary">View All Files</a>
-        <a href="/search" class="btn btn-secondary">Search</a>
+
+    <div class="file-info-grid">
+        <!-- Main Info Section -->
+        <div class="info-section">
+            <h2>File Information</h2>
+            
+            <div class="info-row">
+                <span class="info-label">Hash:</span>
+                <code class="info-value">{{ filehash }}</code>
+            </div>
+            
+            <div class="info-row">
+                <span class="info-label">Size:</span>
+                <span class="info-value">{{ file_size }}</span>
+            </div>
+            
+            <div class="info-row">
+                <span class="info-label">Type:</span>
+                <span class="info-value">{{ mime_type or 'Unknown' }}</span>
+            </div>
+            
+            <div class="info-row">
+                <span class="info-label">Uploaded:</span>
+                <span class="info-value">{{ created_at }}</span>
+            </div>
+            
+            <div class="info-row">
+                <span class="info-label">Downloads:</span>
+                <span class="info-value">{{ download_count }}</span>
+            </div>
+            
+            <div class="info-row">
+                <span class="info-label">Direct Link:</span>
+                <div class="info-value">
+                    <input type="text" value="{{ request.url_root }}f/{{ filehash[:8] }}" 
+                           onclick="this.select()" readonly
+                           style="width: 100%; background: var(--secondary); border: 1px solid var(--border); 
+                                  padding: 0.5rem; border-radius: var(--radius); color: var(--foreground);">
+                </div>
+            </div>
+        </div>
+
+        <!-- Metadata Section -->
+        <div class="info-section" id="metadataSection">
+            <h2>Metadata</h2>
+            <div id="metadataContent">
+                <p style="color: var(--muted-foreground);">Loading metadata...</p>
+            </div>
+        </div>
+
+        <!-- Tags Section -->
+        <div class="info-section" id="tagsSection">
+            <h2>Tags</h2>
+            <div id="tagsContent">
+                <p style="color: var(--muted-foreground);">Loading tags...</p>
+            </div>
+        </div>
+
+        <!-- Linked Files Section -->
+        <div class="info-section" id="linkedSection">
+            <h2>Linked Files</h2>
+            <div id="linkedContent">
+                <p style="color: var(--muted-foreground);">Loading linked files...</p>
+            </div>
+        </div>
     </div>
 </div>
 
-<div id="notification" style="position: fixed; bottom: 2rem; right: 2rem; background: var(--primary); color: white; padding: 1rem 1.5rem; border-radius: var(--radius); display: none; animation: slideUp 0.3s ease-out;">
-    Link copied to clipboard!
+<!-- Metadata Edit Modal (reuse from files.html) -->
+<div id="metadataModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Edit File Metadata</h2>
+            <button class="close-btn" onclick="closeModal('metadataModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="metadataForm">
+                <input type="hidden" id="fileId">
+                
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="fileDescription" rows="3" placeholder="Add a description..."></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label>Tags</label>
+                    <div id="tagSelector" class="tag-selector"></div>
+                    <input type="text" id="newTag" placeholder="Add new tag..." style="margin-top: 0.5rem;">
+                </div>
+                
+                <div class="form-group">
+                    <label>Custom Metadata</label>
+                    <textarea id="customMetadata" rows="4" placeholder='{"key": "value"}' style="font-family: monospace;"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label>Link to Other Files</label>
+                    <button type="button" class="btn btn-secondary" onclick="openLinkModal()">
+                        🔗 Manage Links
+                    </button>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeModal('metadataModal')">Cancel</button>
+            <button class="btn btn-primary" onclick="saveMetadata()">Save</button>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<style>
+.file-info-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+.file-info-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.file-title {
+    font-size: 1.5rem;
+    margin: 0;
+    word-break: break-word;
+}
+
+.file-actions {
+    display: flex;
+    gap: 1rem;
+}
+
+.file-info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+}
+
+.info-section {
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+}
+
+.info-section h2 {
+    font-size: 1.125rem;
+    margin-bottom: 1rem;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.info-row:last-child {
+    border-bottom: none;
+}
+
+.info-label {
+    font-weight: 500;
+    color: var(--muted-foreground);
+}
+
+.info-value {
+    text-align: right;
+    font-family: var(--font-mono);
+}
+
+code {
+    background: var(--background);
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-size: 0.875rem;
+}
+
+/* Modal and form styles from files.html */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: var(--secondary);
+    border-radius: var(--radius);
+    max-width: 600px;
+    width: 90%;
+    max-height: 90vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h2 {
+    margin: 0;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: var(--muted-foreground);
+    line-height: 1;
+}
+
+.modal-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.modal-footer {
+    padding: 1.5rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.form-group input[type="text"],
+.form-group textarea,
+.form-group select {
+    width: 100%;
+    padding: 0.5rem;
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--foreground);
+}
+
+.tag-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.tag-option {
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.tag-option.selected {
+    border-color: var(--primary);
+    background: var(--primary);
+}
+
+.tag {
+    font-size: 0.75rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    border: 1px solid;
+    display: inline-block;
+    margin-right: 0.25rem;
+}
+
+.linked-file {
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.linked-file:hover {
+    border-color: var(--primary);
+}
+
+.link-type {
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    text-transform: uppercase;
+}
+</style>
+
 <script>
-function copyToClipboard(text) {
-    navigator.clipboard.writeText(text).then(() => {
-        const notification = document.getElementById('notification');
-        notification.style.display = 'block';
-        setTimeout(() => {
-            notification.style.display = 'none';
-        }, 3000);
-    }).catch(() => {
-        alert('Failed to copy link. Please copy manually.');
+// Extract file ID from URL or filename
+let currentFileId = null;
+let selectedTags = new Set();
+let availableTags = [];
+let fileData = null;
+
+// Get file hash from template
+const fileHash = '{{ filehash }}';
+
+async function loadFileMetadata() {
+    try {
+        // First, get file ID by searching for the hash
+        const filesResponse = await fetch('/files', {headers: {'Accept': 'application/json'}});
+        const filesData = await filesResponse.json();
+        const file = filesData.files.find(f => f.hash === fileHash);
+        
+        if (!file) {
+            console.error('File not found in listing');
+            return;
+        }
+        
+        currentFileId = file.id;
+        
+        // Load metadata
+        const response = await fetch(`/api/files/${currentFileId}/metadata`);
+        fileData = await response.json();
+        
+        // Update metadata section
+        const metadataContent = document.getElementById('metadataContent');
+        if (fileData.description || Object.keys(fileData.metadata || {}).length > 0) {
+            let html = '';
+            if (fileData.description) {
+                html += `<p>${fileData.description}</p>`;
+            }
+            if (fileData.metadata && Object.keys(fileData.metadata).length > 0) {
+                html += '<h3 style="margin-top: 1rem;">Custom Metadata</h3>';
+                html += '<pre style="background: var(--background); padding: 1rem; border-radius: var(--radius); overflow-x: auto;">';
+                html += JSON.stringify(fileData.metadata, null, 2);
+                html += '</pre>';
+            }
+            metadataContent.innerHTML = html;
+        } else {
+            metadataContent.innerHTML = '<p style="color: var(--muted-foreground);">No metadata added yet.</p>';
+        }
+        
+        // Update tags section
+        const tagsContent = document.getElementById('tagsContent');
+        if (fileData.tags && fileData.tags.length > 0) {
+            tagsContent.innerHTML = fileData.tags.map(tag => 
+                `<span class="tag" style="background-color: ${tag.color}20; border-color: ${tag.color}; color: ${tag.color}">
+                    ${tag.name}
+                </span>`
+            ).join('');
+        } else {
+            tagsContent.innerHTML = '<p style="color: var(--muted-foreground);">No tags added yet.</p>';
+        }
+        
+        // Update linked files section
+        const linkedContent = document.getElementById('linkedContent');
+        if (fileData.linked_files && fileData.linked_files.length > 0) {
+            linkedContent.innerHTML = fileData.linked_files.map(link => 
+                `<div class="linked-file" onclick="window.location.href='/f/${link.hash}'">
+                    <div>${link.filename}</div>
+                    <div class="link-type">${link.link_type.replace('_', ' ')}</div>
+                    ${link.description ? `<div style="font-size: 0.875rem; color: var(--muted-foreground);">${link.description}</div>` : ''}
+                </div>`
+            ).join('');
+        } else {
+            linkedContent.innerHTML = '<p style="color: var(--muted-foreground);">No linked files.</p>';
+        }
+        
+    } catch (error) {
+        console.error('Failed to load metadata:', error);
+    }
+}
+
+// Load available tags
+async function loadTags() {
+    try {
+        const response = await fetch('/api/tags');
+        const data = await response.json();
+        availableTags = data.tags;
+    } catch (error) {
+        console.error('Failed to load tags:', error);
+    }
+}
+
+// Edit metadata
+async function editMetadata() {
+    if (!currentFileId) {
+        alert('File metadata not loaded yet. Please try again.');
+        return;
+    }
+    
+    selectedTags.clear();
+    
+    // Set current values
+    document.getElementById('fileId').value = currentFileId;
+    document.getElementById('fileDescription').value = fileData.description || '';
+    document.getElementById('customMetadata').value = JSON.stringify(fileData.metadata || {}, null, 2);
+    
+    // Set current tags
+    fileData.tags.forEach(tag => selectedTags.add(tag.id));
+    
+    // Render tag selector
+    renderTagSelector();
+    
+    // Show modal
+    document.getElementById('metadataModal').style.display = 'flex';
+}
+
+function renderTagSelector() {
+    const container = document.getElementById('tagSelector');
+    container.innerHTML = '';
+    
+    availableTags.forEach(tag => {
+        const tagEl = document.createElement('div');
+        tagEl.className = `tag-option ${selectedTags.has(tag.id) ? 'selected' : ''}`;
+        tagEl.style.borderColor = tag.color;
+        tagEl.style.color = selectedTags.has(tag.id) ? 'white' : tag.color;
+        tagEl.innerHTML = tag.name;
+        tagEl.onclick = () => toggleTag(tag.id);
+        container.appendChild(tagEl);
     });
 }
+
+function toggleTag(tagId) {
+    if (selectedTags.has(tagId)) {
+        selectedTags.delete(tagId);
+    } else {
+        selectedTags.add(tagId);
+    }
+    renderTagSelector();
+}
+
+async function saveMetadata() {
+    try {
+        // Update metadata
+        const metadataResponse = await fetch(`/api/files/${currentFileId}/metadata`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                description: document.getElementById('fileDescription').value,
+                metadata: JSON.parse(document.getElementById('customMetadata').value || '{}')
+            })
+        });
+        
+        if (!metadataResponse.ok) throw new Error('Failed to update metadata');
+        
+        // Update tags (same logic as files.html)
+        const currentResponse = await fetch(`/api/files/${currentFileId}/metadata`);
+        const currentData = await currentResponse.json();
+        const currentTagIds = new Set(currentData.tags.map(t => t.id));
+        
+        // Remove unselected tags
+        for (const tagId of currentTagIds) {
+            if (!selectedTags.has(tagId)) {
+                await fetch(`/api/files/${currentFileId}/tags?tag_id=${tagId}`, {
+                    method: 'DELETE'
+                });
+            }
+        }
+        
+        // Add new tags
+        for (const tagId of selectedTags) {
+            if (!currentTagIds.has(tagId)) {
+                await fetch(`/api/files/${currentFileId}/tags`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({tag_id: tagId})
+                });
+            }
+        }
+        
+        // Handle new tag
+        const newTagName = document.getElementById('newTag').value.trim();
+        if (newTagName) {
+            const newTagResponse = await fetch('/api/tags', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name: newTagName})
+            });
+            
+            if (newTagResponse.ok) {
+                const newTag = await newTagResponse.json();
+                await fetch(`/api/files/${currentFileId}/tags`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({tag_id: newTag.id})
+                });
+            }
+        }
+        
+        // Close modal and reload metadata
+        closeModal('metadataModal');
+        loadFileMetadata();
+    } catch (error) {
+        console.error('Failed to save metadata:', error);
+        alert('Failed to save metadata: ' + error.message);
+    }
+}
+
+function closeModal(modalId) {
+    document.getElementById(modalId).style.display = 'none';
+}
+
+function openLinkModal() {
+    // TODO: Implement link management modal
+    alert('Link management coming soon! Use the gallery view to link files.');
+}
+
+// Initialize
+loadTags();
+loadFileMetadata();
 </script>
 {% endblock %} 
