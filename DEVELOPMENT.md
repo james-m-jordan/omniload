@@ -67,7 +67,7 @@ This guide covers the technical details of OmniLoad's implementation, architectu
 - Real-time progress tracking in UI
 - Automatic upload method selection based on file size
 
-### Sprint 2.6: Production Polish (Latest)
+### Sprint 2.6: Production Polish
 - Removed debug mode from production
 - Added environment variable validation
 - Implemented CORS support for API usage
@@ -83,6 +83,25 @@ This guide covers the technical details of OmniLoad's implementation, architectu
 - CORS enabled for API integration
 - Professional error responses
 - No debug mode in production
+
+### Sprint 3.0: Metadata & Libraries (Latest)
+- Complete UI redesign with dark theme
+- Added comprehensive metadata system
+- Implemented file tagging with colors
+- Created library system for file grouping
+- Added file linking and relationships
+- Built chat interface with natural commands
+- Created gallery view with card layout
+- Added RESTful API for all metadata operations
+
+**Key Features Added**:
+- **Database**: Extended schema with 6 new tables
+- **UI**: Beautiful dark theme with smooth animations
+- **Libraries**: Group files with `library:hash` commands
+- **Tags**: Organize with colored labels
+- **Metadata**: Descriptions and custom JSON data
+- **Links**: Create relationships between files
+- **API**: Complete REST endpoints for automation
 
 ## 📁 Code Structure
 
@@ -117,6 +136,19 @@ ALTER TABLE files ADD COLUMN mime_type TEXT;
 ALTER TABLE files ADD COLUMN upload_ip TEXT;
 ALTER TABLE files ADD COLUMN download_count INTEGER DEFAULT 0;
 CREATE INDEX idx_filehash ON files(filehash);
+
+-- Sprint 3 (Metadata & Libraries)
+ALTER TABLE files ADD COLUMN description TEXT;
+ALTER TABLE files ADD COLUMN metadata_json TEXT;
+ALTER TABLE files ADD COLUMN user_hash TEXT;
+CREATE INDEX idx_user_hash ON files(user_hash);
+
+-- New metadata tables
+CREATE TABLE tags (id, name, color, created_at);
+CREATE TABLE file_tags (file_id, tag_id, created_at);
+CREATE TABLE file_links (id, source_file_id, target_file_id, link_type, description);
+CREATE TABLE collections (id, name, description, icon, color);
+CREATE TABLE file_collections (file_id, collection_id, position);
 ```
 
 ## 🔑 Key Implementation Details
@@ -183,6 +215,42 @@ for col_name, col_type in columns_to_add:
         c.execute(f'ALTER TABLE files ADD COLUMN {col_name} {col_type}')
 ```
 
+### Library System Implementation
+
+```python
+# Generate library hash for new uploads
+import secrets
+user_hash = request.form.get('user_hash', '') or secrets.token_hex(12)
+
+# Parse library commands from chat
+library_match = inputValue.match(/library:([a-zA-Z0-9_-]{12,})/i)
+if library_match:
+    formData.append('user_hash', library_match[1])
+
+# Library endpoint
+@app.route('/library/<user_hash>')
+def view_library(user_hash):
+    # Query all files with matching user_hash
+    # Return gallery view of library files
+```
+
+### Metadata API Design
+
+```python
+# RESTful endpoints for metadata
+@app.route('/api/files/<int:file_id>/metadata', methods=['GET', 'PUT'])
+@app.route('/api/tags', methods=['GET', 'POST'])
+@app.route('/api/files/<int:file_id>/tags', methods=['POST', 'DELETE'])
+@app.route('/api/files/<int:file_id>/links', methods=['POST', 'DELETE'])
+
+# JSON metadata storage
+metadata = {
+    "custom_field": "value",
+    "properties": {...}
+}
+c.execute('UPDATE files SET metadata_json = ?', (json.dumps(metadata),))
+```
+
 ## 🧪 Testing Locally
 
 ### Basic Testing Flow
@@ -203,6 +271,31 @@ for col_name, col_type in columns_to_add:
 3. **Search**
    ```bash
    # http://localhost:5000/search?q=test
+   ```
+
+4. **Test Library System**
+   ```bash
+   # Upload with library
+   curl -X POST -F "file=@test.txt" -F "user_hash=abc123def456" http://localhost:5000/upload
+   
+   # View library
+   http://localhost:5000/library/abc123def456
+   ```
+
+5. **Test Metadata API**
+   ```bash
+   # Get file metadata
+   curl http://localhost:5000/api/files/1/metadata
+   
+   # Update metadata
+   curl -X PUT -H "Content-Type: application/json" \
+     -d '{"description":"Test file","metadata":{"key":"value"}}' \
+     http://localhost:5000/api/files/1/metadata
+   
+   # Add tag
+   curl -X POST -H "Content-Type: application/json" \
+     -d '{"tag_id":1}' \
+     http://localhost:5000/api/files/1/tags
    ```
 
 ### Database Inspection
@@ -289,37 +382,88 @@ app.run(debug=True)
 
 ## 🚀 Future Improvements
 
-### Sprint 3: UI & UX
-- [ ] Image/video preview
-- [ ] Bulk upload
-- [ ] Progress bars for large files
-- [ ] CORS configuration
-- [ ] Copy-to-clipboard for URLs
+### ✅ Completed in Sprint 3
+- [x] Beautiful dark UI redesign
+- [x] Progress bars for large files
+- [x] CORS configuration
+- [x] Copy-to-clipboard for URLs
+- [x] Move templates to separate files
+- [x] Metadata system with tags
+- [x] Library/grouping system
+- [x] RESTful API for automation
 
-### Sprint 4: Security
+### Sprint 4: Media & Preview
+- [ ] Image/video preview in-browser
+- [ ] Thumbnail generation
+- [ ] Audio player integration
+- [ ] PDF viewer
+- [ ] Code syntax highlighting
+- [ ] Bulk upload interface
+
+### Sprint 5: Security
 - [ ] Rate limiting (flask-limiter)
 - [ ] File type validation
-- [ ] Size limits
-- [ ] Password protection
-- [ ] Expiring links
+- [ ] Password-protected files
+- [ ] Expiring links with TTL
 - [ ] Admin authentication
+- [ ] API key management
 
-### Sprint 5: Scale & Polish
+### Sprint 6: Scale & Polish
 - [ ] Redis for caching
 - [ ] CDN integration
-- [ ] Virus scanning
-- [ ] Compression
-- [ ] Analytics
-- [ ] API documentation
+- [ ] Virus scanning (ClamAV)
+- [ ] Automatic compression
+- [ ] Analytics dashboard
+- [ ] API documentation (OpenAPI)
 - [ ] Webhook support
+- [ ] S3 compatibility layer
 
 ### Technical Debt
-- [ ] Move templates to separate files
 - [ ] Add comprehensive error handling
-- [ ] Implement proper logging
-- [ ] Add unit tests
+- [ ] Implement structured logging
+- [ ] Add unit and integration tests
 - [ ] Create config.py for settings
 - [ ] Add database connection pooling
+- [ ] Implement rate limiting
+- [ ] Add monitoring/alerting
+
+## 🏷️ Working with Metadata
+
+### Tag System
+```python
+# Default tags created by migration
+tags = ['document', 'image', 'video', 'code', 'archive', 'important', 'personal', 'work']
+
+# Tag colors use Tailwind palette
+colors = {
+    'document': '#10b981',  # green
+    'image': '#8b5cf6',     # purple
+    'video': '#ef4444',     # red
+    # ...
+}
+```
+
+### Library Commands
+```javascript
+// Chat commands supported
+"library:abc123def456"      // Add to specific library
+"u:abc123def456"           // Alias for library
+"library abc123def456"     // Natural language variant
+
+// Pre-fill library via URL
+"/?library=abc123def456"   // Sets library for session
+```
+
+### Metadata Structure
+```json
+{
+  "custom_field": "value",
+  "project": "OmniLoad v3",
+  "category": "development",
+  "keywords": ["upload", "storage", "b2"],
+  "related_urls": ["https://..."]
+}
+```
 
 ## 💡 Development Tips
 
@@ -328,6 +472,8 @@ app.run(debug=True)
 3. **Simple First**: Complexity can always be added
 4. **Document Everything**: Future you will thank you
 5. **Git Workflow**: Feature branches keep main stable
+6. **Database Migrations**: Always use `db_migrations.py` for schema changes
+7. **API Design**: Keep RESTful conventions for consistency
 
 ## 📚 Resources
 

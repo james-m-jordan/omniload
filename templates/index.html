@@ -131,11 +131,12 @@ async function uploadFile(file) {
     const formData = new FormData();
     formData.append('file', file);
     
-    // Check for library command in input
-    const libraryMatch = inputValue.match(/library:([a-zA-Z0-9_-]{12,})/i);
-    if (libraryMatch) {
-        formData.append('user_hash', libraryMatch[1]);
-        addMessage(`Adding to library: ${libraryMatch[1]}`);
+    // Check for library command in URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const libraryParam = urlParams.get('library');
+    if (libraryParam) {
+        formData.append('user_hash', libraryParam);
+        addMessage(`Adding to library: ${libraryParam}`);
     }
     
     uploadArea.style.display = 'none';
@@ -361,12 +362,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const libraryParam = urlParams.get('library');
     
     if (libraryParam) {
-        // Pre-set library ID in input
-        inputValue = `library:${libraryParam}`;
-        if (textareaRef.current) {
-            textareaRef.current.value = inputValue;
-        }
-        
         // Update welcome message
         const welcomeMsg = document.getElementById('welcomeMessage');
         if (welcomeMsg) {
